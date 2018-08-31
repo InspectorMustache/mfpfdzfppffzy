@@ -1,3 +1,0 @@
-#!/usr/bin/env fish
-
-mpc list artist | fzf
