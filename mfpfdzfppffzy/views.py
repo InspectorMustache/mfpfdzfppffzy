@@ -1,25 +1,14 @@
-import mpd
 import os
 import subprocess
 import shlex
 import re
 import shutil
-from functools import wraps
-from collections import namedtuple
+from .utils import notify
+from .client import MPD_C as mpc
 
-try:
-    MPD_PORT = int(os.getenv("MPD_PORT", default=6600))
-except ValueError:
-    # if MPD_PORT is set to something strange, fall back to 6600
-    MPD_PORT = 6600
-
-MPD_HOST = os.getenv('MPD_HOST', default="127.0.0.1")
-PROG_NAME = 'MPD'
 FZF_PROG_OPTS = ['-m', '--height=100%', '--inline-info']
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
 ARTIST_PREFIX_MATCHER = re.compile(r'^the (.+)', flags=re.IGNORECASE)
-
-ViewSettings = namedtuple('ViewSettings', ['command', 'sort_key', 'header'])
 
 
 class ViewSettings():
@@ -43,23 +32,6 @@ class ViewSettings():
         self.header_str = cmd
 
 
-def with_connection(f):
-    """
-    Decorator that connects and disconnects before and after running f.
-    """
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        try:
-            args[0].ping()
-        except mpd.base.ConnectionError:
-            connect_to_mpd()
-        v = f(*args, **kwargs)
-        args[0].close()
-        return v
-
-    return wrapped
-
-
 class KeyBindings(dict):
     """Subclass of a dict whose string representation conforms to fzf's
       keybinding syntax."""
@@ -70,39 +42,6 @@ class KeyBindings(dict):
     def __str__(self):
         pairs = (':'.join(t) for t in self.items())
         return '--bind={}'.format(','.join(pairs))
-
-
-class ConnectClient(mpd.MPDClient):
-    """
-    Derived MPDClient that checks for an existing connection on major methods.
-    """
-
-    def __init__(self):
-        self.required_tags = False
-        super().__init__()
-
-    @with_connection
-    def list(self, *args, **kwargs):
-        return super().list(*args, **kwargs)
-
-    @with_connection
-    def find(self, *args, **kwargs):
-        # make sure we get all the tags we need so we don't get a key error
-        self.required_tags = kwargs.pop('required_tags', False)
-        match = super().find(*args, **kwargs)
-
-        if self.required_tags:
-            return list(map(self.ensure_tags, match))
-        else:
-            return match
-
-    def ensure_tags(self, title):
-        """
-        Ensure title has tags as keys.
-        """
-        for tag in (x for x in self.required_tags if x not in title.keys()):
-            title[tag] = ''
-        return title
 
 
 class FilterView():
@@ -120,10 +59,8 @@ class FilterView():
         self.filter = {x.command[0]: '' for x in views[1:]}
 
     def pass_through(self):
-        """
-        Move through views until we reach the final one.
-        Return final selection.
-        """
+        """Move through views until we reach the final one. Return final
+        selection."""
         while True:
             active_view = self.views[self.state]
 
@@ -136,27 +73,6 @@ class FilterView():
 
             if self.state == self.end_state or self.state == 0:
                 break
-
-
-def connect_to_mpd():
-    """
-    Connect the global client instance to the mpd server.
-    """
-    try:
-        mpd_c.connect(MPD_HOST, port=MPD_PORT)
-    except (ConnectionRefusedError, TimeoutError):
-        notify('Error connectiog to MPD instance')
-
-
-def notify(msg):
-    """
-    Try using notify-send to display a notification. If there is no
-    notify-send command, do nothing.
-    """
-    try:
-        subprocess.run(['notify-send', PROG_NAME, msg])
-    except FileNotFoundError:
-        pass
 
 
 def get_track_line(track_dict):
@@ -239,25 +155,15 @@ Try integer conversion or just return 0.
         return 0
 
 
-def make_header(header):
-    """
-    Make a list for header that can be unwrapped and passed as Popen argument.
-    """
-    if header:
-        return ['--header', header]
-    else:
-        return []
-
-
 def container_view(view_settings):
     """
     Use args to build a view that refers to another underlying view (such as
     a list of artists or albums). Optionally specify sorting with sort_key.
     Return the selection.
     """
-    header = make_header(view_settings.header)
-    entries = mpd_c.list(*view_settings.command)
-    return create_view(entries, *header, sort_key=view_settings.sort_key)
+    entries = mpc.list(*view_settings.command)
+    return create_view(entries, *view_settings.header,
+                       sort_key=view_settings.sort_key)
 
 
 def track_view(view_settings):
@@ -267,15 +173,14 @@ def track_view(view_settings):
     Optionally specify sorting with sort_key and a header for fzf.
     Return the selection.
     """
-    header = make_header(view_settings.header)
-
     # create a list of nicely formatted strings from the list of dicts we got
     # from mpd
-    tracks = (get_track_line(x) for x in mpd_c.find(
+    tracks = (get_track_line(x) for x in mpc.find(
         *view_settings.command, required_tags=['artist', 'album', 'title']
     ))
 
-    return create_view(tracks, *header, sort_key=view_settings.sort_key)
+    return create_view(tracks, *view_settings.header,
+                       sort_key=view_settings.sort_key)
 
 
 def singles_view(view_settings):
@@ -285,24 +190,9 @@ def singles_view(view_settings):
     The sort_key argument here applies to the string that is being handed over
     to fzf, which has the format 'Artist | Album | Title'.
     """
-    header = make_header(view_settings.header)
-
-    mpd_return = mpd_c.find(*view_settings.command,
-                            required_tags=['artist', 'album', 'title'])
+    mpd_return = mpc.find(*view_settings.command,
+                          required_tags=['artist', 'album', 'title'])
     singles = (get_output_line(x['artist'], x['title'], x['album'])
                for x in mpd_return)
-    return create_view(singles, *header, sort_key=view_settings.sort_key)
-
-
-mpd_c = ConnectClient()
-vs = ViewSettings('list Artist',
-                  get_output_line('Artist', 'Album', 'Title'),
-                  artist_sorter)
-
-# l = [ViewSettings(['list', 'Artist'],
-#                   artist_sorter,
-#                   get_output_line('Artist', 'Album', 'Title')),
-#      ViewSettings(['list', 'artist'],
-#                   artist_sorter,
-#                   get_output_line('Artist', 'Album', 'Title')),
-#      print(singles_view(vs))
+    return create_view(singles, *view_settings.header,
+                       sort_key=view_settings.sort_key)
