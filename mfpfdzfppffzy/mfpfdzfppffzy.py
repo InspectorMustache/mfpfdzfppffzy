@@ -22,6 +22,27 @@ ARTIST_PREFIX_MATCHER = re.compile(r'^the (.+)', flags=re.IGNORECASE)
 ViewSettings = namedtuple('ViewSettings', ['command', 'sort_key', 'header'])
 
 
+class ViewSettings():
+    """
+    A container for settings relevant to creating views.
+    Returns string arguments for command and header in a processible list form.
+    """
+    def __init__(self, command, header=None, sort_key=None):
+        self.command = command
+        self.header_str = header
+        self.sort_key = sort_key
+
+    @property
+    def header(self):
+        """Return header as list for use in Popen and the like."""
+        return ['--header', self.header_str]
+
+    @header.setter
+    def header(self, cmd):
+        """Pass str input for header to self.header_str."""
+        self.header_str = cmd
+
+
 def with_connection(f):
     """
     Decorator that connects and disconnects before and after running f.
@@ -53,8 +74,7 @@ class KeyBindings(dict):
 
 class ConnectClient(mpd.MPDClient):
     """
-    Derived MPDClient that checks for an existing connection on the major
-    methods.
+    Derived MPDClient that checks for an existing connection on major methods.
     """
 
     def __init__(self):
@@ -89,7 +109,7 @@ class FilterView():
     """
     Create a view consisting of several views that progressively filter the
     selection. The most obvious example would be Artist->Album->Title.
-    FilterView takes in a list of view_settings from which these views are
+    FilterView takes in a list of ViewSettings from which these views are
     created.
     """
     def __init__(self, views):
@@ -97,6 +117,7 @@ class FilterView():
         self.views = views
         self.state = 0
         self.end_state = len(views) + 1
+        self.filter = {x.command[0]: '' for x in views[1:]}
 
     def pass_through(self):
         """
@@ -105,7 +126,12 @@ class FilterView():
         """
         while True:
             active_view = self.views[self.state]
-            sel = create_view(active_view)
+
+            if self.state is not self.end_state:
+                sel = container_view(active_view)
+            else:
+                sel = track_view(active_view)
+
             self.state = self.state + 1 if sel else self.state
 
             if self.state == self.end_state or self.state == 0:
@@ -269,7 +295,14 @@ def singles_view(view_settings):
 
 
 mpd_c = ConnectClient()
-vs = ViewSettings(['base', 'Singles'],
-                  artist_sorter,
-                  get_output_line('Artist', 'Album', 'Title'))
-print(singles_view(vs))
+vs = ViewSettings('list Artist',
+                  get_output_line('Artist', 'Album', 'Title'),
+                  artist_sorter)
+
+# l = [ViewSettings(['list', 'Artist'],
+#                   artist_sorter,
+#                   get_output_line('Artist', 'Album', 'Title')),
+#      ViewSettings(['list', 'artist'],
+#                   artist_sorter,
+#                   get_output_line('Artist', 'Album', 'Title')),
+#      print(singles_view(vs))
