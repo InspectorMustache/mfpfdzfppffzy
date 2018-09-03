@@ -3,6 +3,8 @@ import subprocess
 import shlex
 import re
 import shutil
+from copy import deepcopy
+from mpd.base import CommandError as MpdCommandError
 from .utils import notify
 from .client import MPD_C as mpc
 
@@ -16,9 +18,9 @@ class ViewSettings():
     A container for settings relevant to creating views.
     Returns string arguments for command and header in a processible list form.
     """
-    def __init__(self, command, header=None, sort_key=None):
-        self.command = command
-        self.header_str = header
+    def __init__(self, cmd, header=None, sort_key=None):
+        self.cmd = cmd
+        self.header_str = header or ''
         self.sort_key = sort_key
 
     @property
@@ -50,29 +52,88 @@ class FilterView():
     selection. The most obvious example would be Artist->Album->Title.
     FilterView takes in a list of ViewSettings from which these views are
     created.
+    When dynamic_headers is True, headers will be created based on the last
+    selection for every view but the first. In this case, provided headers are
+    ignored.
     """
-    def __init__(self, views):
+    def __init__(self, views, dynamic_headers=None):
         # the caller must make sure that the list is appropriately ordered
         self.views = views
-        self.state = 0
-        self.end_state = len(views) + 1
-        self.filter = {x.command[0]: '' for x in views[1:]}
+        self.dynamic_headers = dynamic_headers
+        self._state = 0
+        self.final_state = len(views)
+        # last returned returncode
+        self.returncode = 0
+        # the most recent selection
+        self.sel = None
+        # the filter values that are appended to the command, a dictionary that
+        # has a filter for each state
+        self.filter_cmd = {}
+
+    @property
+    def active_view(self):
+        """The currently active view."""
+        return self.views[self.state]
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, new_state):
+        """Update dynamic headers when changing state."""
+        if not self.dynamic_headers:
+            self._state = new_state
+        # don't update header when we've already moved past the last view
+        elif new_state > self.state and new_state < self.final_state:
+            self._state = new_state
+            self.active_view.header = self.sel
+        else:
+            self._state = new_state
+
+    def move_forward(self):
+        """Use the selection from the previous steps to make the necessary
+        modifications for the following view."""
+        # append filter based on selection to filter_cmd
+        self.filter_cmd[self.state] = [self.active_view.cmd[0], self.sel]
+        self.state += 1
+
+    def move_backward(self):
+        """Go back to previous view."""
+        self.state -= 1
+
+    def call_view_function(self):
+        """Call appropriate view function. Container view for everything but
+        the last view. For the last view, try track view first and fall back to
+        singles view."""
+        # integrate filter_command into command
+        view = deepcopy(self.active_view)
+        for f in (self.filter_cmd[s] for s in range(self.state)):
+            view.cmd.extend(f)
+
+        if self.state < self.final_state - 1:
+            self.sel, self.returncode = container_view(view)
+        else:
+            try:
+                self.sel, self.returncode = track_view(view)
+            except MpdCommandError:
+                self.sel, self.returncode = container_view(view)
 
     def pass_through(self):
-        """Move through views until we reach the final one. Return final
-        selection."""
-        while True:
-            active_view = self.views[self.state]
-
-            if self.state is not self.end_state:
-                sel = container_view(active_view)
+        """Move through views until we reach the final one."""
+        while self.state in range(0, self.final_state):
+            self.call_view_function()
+            if self.returncode == 0:
+                self.move_forward()
             else:
-                sel = track_view(active_view)
+                self.move_backward()
 
-            self.state = self.state + 1 if sel else self.state
-
-            if self.state == self.end_state or self.state == 0:
-                break
+    def get_filtered_selection(self):
+        """Get a list of items based on the selected filters."""
+        filters = []
+        for f in (self.filter_cmd[x] for x in range(len(self.filter_cmd))):
+            filters.extend(f)
+        return mpc.find(*filters)
 
 
 def get_track_line(track_dict):
@@ -114,11 +175,8 @@ def pipe_to_fzf(content, *args):
                            encoding='utf-8')
 
     try:
-        ret = fzf.communicate(input=content)
-        if fzf.returncode == 130:
-            exit()
-        else:
-            return ret
+        stdout, stderr = fzf.communicate(input=content)
+        return stdout, fzf.returncode
     except Exception:  # yes yes, bad I know
         notify('Error running fzf')
 
@@ -126,12 +184,12 @@ def pipe_to_fzf(content, *args):
 def create_view(items, *args, sort_key=None):
     """
     Create a fzf view from items. Additional args are passed to
-    fzf. Optionally supply a sort_key for items. Returns the output from
-    fzf.
+    fzf. Optionally supply a sort_key for items. Returns a tuple containing the
+    output and returncode of the fzf command.
     """
     view = '\n'.join(sorted(set(items), key=sort_key))
-    sel, _ = pipe_to_fzf(view, *args)
-    return sel.strip('\n')
+    sel, returncode = pipe_to_fzf(view, *args)
+    return (sel.strip('\n'), returncode)
 
 
 def artist_sorter(item):
@@ -161,7 +219,7 @@ def container_view(view_settings):
     a list of artists or albums). Optionally specify sorting with sort_key.
     Return the selection.
     """
-    entries = mpc.list(*view_settings.command)
+    entries = mpc.list(*view_settings.cmd)
     return create_view(entries, *view_settings.header,
                        sort_key=view_settings.sort_key)
 
@@ -176,7 +234,7 @@ def track_view(view_settings):
     # create a list of nicely formatted strings from the list of dicts we got
     # from mpd
     tracks = (get_track_line(x) for x in mpc.find(
-        *view_settings.command, required_tags=['artist', 'album', 'title']
+        *view_settings.cmd, required_tags=['track', 'title']
     ))
 
     return create_view(tracks, *view_settings.header,
@@ -190,7 +248,7 @@ def singles_view(view_settings):
     The sort_key argument here applies to the string that is being handed over
     to fzf, which has the format 'Artist | Album | Title'.
     """
-    mpd_return = mpc.find(*view_settings.command,
+    mpd_return = mpc.find(*view_settings.cmd,
                           required_tags=['artist', 'album', 'title'])
     singles = (get_output_line(x['artist'], x['title'], x['album'])
                for x in mpd_return)

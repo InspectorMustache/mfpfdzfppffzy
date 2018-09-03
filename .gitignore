@@ -4,6 +4,7 @@
 !mfpfdzfppffzy/*
 !tests
 !tests/*
+tests/.pytest_cache
 
 !.gitignore
 !LICENSE
