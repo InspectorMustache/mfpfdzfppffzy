@@ -1,10 +1,10 @@
 import os
+import sys
 import subprocess
 import shlex
 import re
 import shutil
 from copy import deepcopy
-from mpd.base import CommandError as MpdCommandError
 from .utils import notify
 from .client import MPD_C as mpc
 
@@ -56,19 +56,16 @@ class FilterView():
     selection for every view but the first. In this case, provided headers are
     ignored.
     """
-    def __init__(self, views, dynamic_headers=None):
+    def __init__(self, views, dynamic_headers=None, final_view='track_view'):
         # the caller must make sure that the list is appropriately ordered
         self.views = views
         self.dynamic_headers = dynamic_headers
-        self._state = 0
+        self.final_view = final_view
+        self.state = 0
         self.final_state = len(views)
-        # last returned returncode
-        self.returncode = 0
-        # the most recent selection
-        self.sel = None
-        # the filter values that are appended to the command, a dictionary that
-        # has a filter for each state
-        self.filter_cmd = {}
+        self.returncode = 0  # last returned returncode
+        self.selections = {}  # selections of each state
+        self.filter_cmd = {}  # filters retrieved from each state
 
     @property
     def active_view(self):
@@ -76,26 +73,16 @@ class FilterView():
         return self.views[self.state]
 
     @property
-    def state(self):
-        return self._state
+    def sel(self):
+        """Shorthand for selection of current view."""
+        return self.selections[self.state]
 
-    @state.setter
-    def state(self, new_state):
-        """Update dynamic headers when changing state."""
-        if not self.dynamic_headers:
-            self._state = new_state
-        # don't update header when we've already moved past the last view
-        elif new_state > self.state and new_state < self.final_state:
-            self._state = new_state
-            self.active_view.header = self.sel
-        else:
-            self._state = new_state
+    @sel.setter
+    def sel(self, sel):
+        self.selections[self.state] = sel
 
     def move_forward(self):
-        """Use the selection from the previous steps to make the necessary
-        modifications for the following view."""
-        # append filter based on selection to filter_cmd
-        self.filter_cmd[self.state] = [self.active_view.cmd[0], self.sel]
+        """Go to next view."""
         self.state += 1
 
     def move_backward(self):
@@ -105,19 +92,40 @@ class FilterView():
     def call_view_function(self):
         """Call appropriate view function. Container view for everything but
         the last view. For the last view, try track view first and fall back to
-        singles view."""
-        # integrate filter_command into command
-        view = deepcopy(self.active_view)
-        for f in (self.filter_cmd[s] for s in range(self.state)):
-            view.cmd.extend(f)
+        container view."""
+        view = self.get_adapted_view()
 
         if self.state < self.final_state - 1:
             self.sel, self.returncode = container_view(view)
         else:
-            try:
-                self.sel, self.returncode = track_view(view)
-            except MpdCommandError:
-                self.sel, self.returncode = container_view(view)
+            # TODO: Exception handling here
+            breakpoint()
+            getattr(sys.modules[__name__], self.final_view)(view)
+
+    def append_filters_to_list(self, l):
+        """Takes a list l and appends all selected filters to it."""
+        for state, sel in self.selections.items():
+            l.append(self.views[state].cmd[0])
+            l.append(sel)
+
+    def get_adapted_view(self):
+        """
+        Create a copy of the current view. Clean out empty command arguments,
+        update the header dynamically and add filters to the command.
+        """
+        view = deepcopy(self.active_view)
+        # clearing out empty commands
+        try:
+            view.cmd.remove('')
+        except ValueError:
+            pass
+        # updating the header
+        if self.dynamic_headers and self.state != 0:
+            view.header = self.selections[self.state - 1]
+        # adding filters
+        self.append_filters_to_list(view.cmd)
+
+        return view
 
     def pass_through(self):
         """Move through views until we reach the final one."""
@@ -130,10 +138,9 @@ class FilterView():
 
     def get_filtered_selection(self):
         """Get a list of items based on the selected filters."""
-        filters = []
-        for f in (self.filter_cmd[x] for x in range(len(self.filter_cmd))):
-            filters.extend(f)
-        return mpc.find(*filters)
+        filters_cmd = []
+        self.append_filters_to_list(filters_cmd)
+        return mpc.find(*filters_cmd)
 
 
 def get_track_line(track_dict):
