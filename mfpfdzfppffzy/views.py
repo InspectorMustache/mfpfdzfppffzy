@@ -35,8 +35,10 @@ class ViewSettings():
 
 
 class KeyBindings(dict):
-    """Subclass of a dict whose string representation conforms to fzf's
-      keybinding syntax."""
+    """
+    Subclass of a dict whose string representation conforms to fzf's
+    keybinding syntax.
+    """
 
     def __init__(self):
         super().__init__()
@@ -99,7 +101,6 @@ class FilterView():
             self.sel, self.returncode = container_view(view)
         else:
             # TODO: Exception handling here
-            breakpoint()
             getattr(sys.modules[__name__], self.final_view)(view)
 
     def append_filters_to_list(self, l):
@@ -110,15 +111,10 @@ class FilterView():
 
     def get_adapted_view(self):
         """
-        Create a copy of the current view. Clean out empty command arguments,
-        update the header dynamically and add filters to the command.
+        Create a copy of the current view. Update the header dynamically and
+        add filters to the command.
         """
         view = deepcopy(self.active_view)
-        # clearing out empty commands
-        try:
-            view.cmd.remove('')
-        except ValueError:
-            pass
         # updating the header
         if self.dynamic_headers and self.state != 0:
             view.header = self.selections[self.state - 1]
@@ -169,8 +165,31 @@ def get_output_line(*args):
         lambda x: '{}…'.format(x[:item_w - 2]) if len(x) > item_w else x,
         args)
     # pad if necessary and join
-    output = '\u200c'.join([x.ljust(item_w) for x in output])
+    output = ''.join([x.ljust(item_w) for x in output])
     return output
+
+
+def add_output_lines(track_list):
+    """Add output line to each dict in track_list."""
+    for track_dict in track_list:
+        track_dict['fzf_string'] = get_output_line(
+            track_dict['artist'], track_dict['title'], track_dict['album']
+        )
+
+
+def adapt_duplicates(find_list):
+    """Make sure the fzf_str key of each item in find_list is unique by
+    appending NUL."""
+    fzf_strs = [x['fzf_str'] for x in find_list]
+    dups = filter(lambda x: fzf_strs.count(x['fzf_str']) > 1, find_list)
+
+    for d in dups:
+        occur_old = fzf_strs.count(d['fzf_str'])
+        occur_new = fzf_strs.count(d['fzf_str'])
+        while occur_old >= occur_new:
+            # append until unique
+            d['fzf_str'] += '\u0000'
+            occur_new = fzf_strs.count(d['fzf_str'])
 
 
 def pipe_to_fzf(content, *args):
@@ -212,7 +231,7 @@ def artist_sorter(item):
 
 def lax_int(x):
     """
-Try integer conversion or just return 0.
+    Try integer conversion or just return 0.
     """
     try:
         return int(x)
@@ -255,9 +274,12 @@ def singles_view(view_settings):
     The sort_key argument here applies to the string that is being handed over
     to fzf, which has the format 'Artist | Album | Title'.
     """
-    mpd_return = mpc.find(*view_settings.cmd,
-                          required_tags=['artist', 'album', 'title'])
-    singles = (get_output_line(x['artist'], x['title'], x['album'])
-               for x in mpd_return)
-    return create_view(singles, *view_settings.header,
-                       sort_key=view_settings.sort_key)
+    mpd_data = mpc.find(*view_settings.cmd,
+                        required_tags=['artist', 'album', 'title'])
+    add_output_lines(mpd_data)
+    singles = (x['fzf_string'] for x in mpd_data)
+    sel, _ = create_view(singles, *view_settings.header,
+                         sort_key=view_settings.sort_key)
+    # pull selected dict out of list
+    d = next(filter(lambda x: x['fzf_string'] == sel, mpd_data))
+    return d
