@@ -1,6 +1,9 @@
 import os
 import shlex
+import tempfile
+import atexit
 import mpd
+from threading import Thread
 from functools import wraps
 
 try:
@@ -19,11 +22,17 @@ def ensure_connect(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
         v = None
+        timeout = 0
         while v is None:
             try:
                 v = f(*args, **kwargs)
-            except mpd.base.ConnectionError:
-                args[0].connect()
+                break
+            except mpd.base.ConnectionError as e:
+                if timeout > 5:
+                    raise e
+                else:
+                    args[0].connect()
+                    timeout += 1
         return v
 
     return wrapped
@@ -32,7 +41,7 @@ def ensure_connect(f):
 def always_connect(c):
     """Class decorator to deocrate all relevant methods in c with
     ensure_connection."""
-    exclude = ['ping', 'connect', 'close']
+    exclude = ['ping', 'connect', 'close', 'mfp_run_command']
 
     def filter_func(x):
         """
@@ -52,20 +61,60 @@ def always_connect(c):
 
 @always_connect
 class ConnectClient(mpd.MPDClient):
-    """
-    Derived MPDClient that checks for an existing connection on major methods.
-    """
+    """Derived MPDClient with some helper methods added."""
 
     def __init__(self, addr=MPD_HOST, port=MPD_PORT):
         self.required_tags = False
         self.addr = addr
         self.port = port
+        self.view = None                # these are for communication
+        self.fifo = self._get_fifo()  # with fzf
         super().__init__()
 
+    def _get_fifo(self):
+        """Create fifo in temp directory."""
+        while True:
+            # this should be safer, right?
+            try:
+                path = tempfile.mktemp()
+                os.mkfifo(path)
+                break
+            except FileExistsError:
+                continue
+
+        atexit.register(os.remove, path)
+        return path
+
+    def _receive_from_fifo(self):
+        """
+        Reads commands from self.fifo and parses them. Stops when NULL is
+        received. This should only be run in parallel to the main application,
+        so it's probably better to run self.listen_on_fifo().
+        """
+        while True:
+            with open(self.fifo) as fifo:
+                msg = fifo.read()
+            self.mfp_run_command(msg.strip('\n'))
+
+            if msg.strip('\n') == 'NULL':
+                break
+
+    def listen_on_fifo(self):
+        """
+        Run a thread that continuously receivs data from the fifo by calling
+        _receive_from_fifo. Once that function returns, the thread is closed.
+        """
+        t = Thread(target=self._receive_from_fifo, daemon=True)
+        t.start()
+
+    def _ensure_tags(self, title):
+        """Ensure title has tags as keys."""
+        for tag in filter(lambda x: x not in title.keys(), self.required_tags):
+            title[tag] = ''
+        return title
+
     def connect(self, *args, **kwargs):
-        """
-        Connect to mpd by using class fields.
-        """
+        """Connect to mpd by using class fields."""
         super().connect(self.addr, *args, port=self.port, **kwargs)
 
     def list(self, *args, **kwargs):
@@ -81,25 +130,20 @@ class ConnectClient(mpd.MPDClient):
         else:
             return match
 
-    def _ensure_tags(self, title):
-        """
-        Ensure title has tags as keys.
-        """
-        for tag in filter(lambda x: x not in title.keys(), self.required_tags):
-            title[tag] = ''
-        return title
-
     def mfp_run_command(self, cmd_str):
-        """Take in string cmd and parse it as an mpd command. (mfp stands for
-        our application name here)."""
-        cmd_list = shlex.parse(cmd_str)
+        """
+        Take in string cmd and parse it as an mpd command. (mfp stands for
+        our application name here).
+        Returns True if succesful, otherwise returns a string that can be
+        returned to the caller - this is supposed to be an interactive command.
+        """
+        cmd_list = shlex.split(cmd_str)
         try:
             cmd = cmd_list.pop(0)
             getattr(self, cmd)(*cmd_list)
+            return True
         except (IndexError, AttributeError):
-            raise mpd.base.CommandError(
-                '{} is not a valid mpd command'.format(cmd_str)
-            )
+            return "'{}' is not a valid command.".format(cmd_str)
 
 
 MPD_C = ConnectClient()
