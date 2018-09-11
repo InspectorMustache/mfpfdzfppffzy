@@ -69,6 +69,7 @@ class ConnectClient(mpd.MPDClient):
         self.port = port
         self.view = None                # these are for communication
         self.fifo = self._get_fifo()  # with fzf
+        self.fifo_thread = None
         super().__init__()
 
     def _get_fifo(self):
@@ -76,7 +77,7 @@ class ConnectClient(mpd.MPDClient):
         while True:
             # this should be safer, right?
             try:
-                path = tempfile.mktemp()
+                path = tempfile.mktemp(prefix='mfpfdzfppffzy.')
                 os.mkfifo(path)
                 break
             except FileExistsError:
@@ -89,23 +90,23 @@ class ConnectClient(mpd.MPDClient):
         """
         Reads commands from self.fifo and parses them. Stops when NULL is
         received. This should only be run in parallel to the main application,
-        so it's probably better to run self.listen_on_fifo().
+        so it's probably better to run self._listen_on_fifo().
         """
         while True:
             with open(self.fifo) as fifo:
                 msg = fifo.read()
-            self.mfp_run_command(msg.strip('\n'))
+                if msg.strip('\n') == 'NULL':
+                    break
 
-            if msg.strip('\n') == 'NULL':
-                break
+                self.mfp_run_command(msg.strip('\n'))
 
-    def listen_on_fifo(self):
+    def _listen_on_fifo(self):
         """
         Run a thread that continuously receivs data from the fifo by calling
         _receive_from_fifo. Once that function returns, the thread is closed.
         """
-        t = Thread(target=self._receive_from_fifo, daemon=True)
-        t.start()
+        self.fifo_thread = Thread(target=self._receive_from_fifo, daemon=True)
+        self.fifo_thread.start()
 
     def _ensure_tags(self, title):
         """Ensure title has tags as keys."""
@@ -141,9 +142,9 @@ class ConnectClient(mpd.MPDClient):
         try:
             cmd = cmd_list.pop(0)
             getattr(self, cmd)(*cmd_list)
-            return True
+            return "OK"
         except (IndexError, AttributeError):
-            return "'{}' is not a valid command.".format(cmd_str)
+            return "ERR '{}' is not a valid command.".format(cmd_str)
 
 
 MPD_C = ConnectClient()
