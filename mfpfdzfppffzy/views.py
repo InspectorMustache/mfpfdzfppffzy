@@ -6,7 +6,6 @@ import re
 import shutil
 from copy import deepcopy
 from .utils import notify
-from .client import MPD_C as mpc
 
 FZF_PROG_OPTS = ['-m', '--height=100%', '--inline-info']
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
@@ -34,20 +33,6 @@ class ViewSettings():
         self.header_str = cmd
 
 
-class KeyBindings(dict):
-    """
-    Subclass of a dict whose string representation conforms to fzf's
-    keybinding syntax.
-    """
-
-    def __init__(self):
-        super().__init__()
-
-    def __str__(self):
-        pairs = (':'.join(t) for t in self.items())
-        return '--bind={}'.format(','.join(pairs))
-
-
 class FilterView():
     """
     Create a view consisting of several views that progressively filter the
@@ -58,8 +43,10 @@ class FilterView():
     selection for every view but the first. In this case, provided headers are
     ignored.
     """
-    def __init__(self, views, dynamic_headers=None, final_view='track_view'):
+    def __init__(self, mpc, views, dynamic_headers=None,
+                 final_view='track_view'):
         # the caller must make sure that the list is appropriately ordered
+        self.mpc = mpc
         self.views = views
         self.dynamic_headers = dynamic_headers
         self.final_view = final_view
@@ -98,10 +85,10 @@ class FilterView():
         view = self.get_adapted_view()
 
         if self.state < self.final_state - 1:
-            self.sel, self.returncode = container_view(view)
+            self.sel, self.returncode = container_view(self.mpc, view)
         else:
             # TODO: Exception handling here
-            getattr(sys.modules[__name__], self.final_view)(view)
+            getattr(sys.modules[__name__], self.final_view)(self.mpc, view)
 
     def append_filters_to_list(self, l):
         """Takes a list l and appends all selected filters to it."""
@@ -136,7 +123,7 @@ class FilterView():
         """Get a list of items based on the selected filters."""
         filters_cmd = []
         self.append_filters_to_list(filters_cmd)
-        return mpc.find(*filters_cmd)
+        return self.mpc.find(*filters_cmd)
 
 
 def get_track_line(track_dict):
@@ -239,7 +226,7 @@ def lax_int(x):
         return 0
 
 
-def container_view(view_settings):
+def container_view(mpc, view_settings):
     """
     Use args to build a view that refers to another underlying view (such as
     a list of artists or albums). Optionally specify sorting with sort_key.
@@ -250,7 +237,7 @@ def container_view(view_settings):
                        sort_key=view_settings.sort_key)
 
 
-def track_view(view_settings):
+def track_view(mpc, view_settings):
     """
     Use args to build a view listing tracks with their track
     numbers.
@@ -267,7 +254,7 @@ def track_view(view_settings):
                        sort_key=view_settings.sort_key)
 
 
-def singles_view(view_settings):
+def singles_view(mpc, view_settings):
     """
     Use args as commands to the MPD Client and build a track-based view.
 
@@ -280,6 +267,10 @@ def singles_view(view_settings):
     singles = (x['fzf_string'] for x in mpd_data)
     sel, _ = create_view(singles, *view_settings.header,
                          sort_key=view_settings.sort_key)
-    # pull selected dict out of list
-    d = next(filter(lambda x: x['fzf_string'] == sel, mpd_data))
-    return d
+
+    # pull selected dict out of list; return None if nothing was selected
+    try:
+        sel = next(filter(lambda x: x['fzf_string'] == sel, mpd_data))
+        return sel
+    except StopIteration:
+        return None
