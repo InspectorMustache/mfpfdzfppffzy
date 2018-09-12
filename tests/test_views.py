@@ -21,9 +21,9 @@ MPD_FIND_RETURN_DICT = {'file': st.text(),
 
 def monkey_mpc(want_return):
     """
-    Create a ConnectClient class whose find and list methods just return
-    whatever is passed to them. (Not really monkeypatching, this is just passed
-    instead of a real ConnectClient instance).
+    Return a ConnectClient class instance whose find and list methods just
+    return want_return. (Not really monkeypatching, this is just passed instead
+    of a real ConnectClient instance).
     """
     class FakeConnectClient():
         def __init__(self, *args, **kwargs):
@@ -55,6 +55,16 @@ def monkey_create_view(monkeypatch):
     monkeypatch.setattr(views, 'create_view', fake_create_view)
 
 
+def is_find_return(ret):
+    """Assert that ret is a single dict as returned by ConnectClient.find."""
+    if ret:
+        assert isinstance(ret, dict)
+        for key in ('file', 'last-modified', 'time', 'duration', 'artist',
+                    'albumartist', 'artistsort', 'title', 'album', 'track',
+                    'date', 'genre'):
+            assert key in ret
+
+
 @given(st.lists(elements=st.text()), st.text())
 def test_view_settings_header(cmd, header):
     vs = views.ViewSettings(cmd, header=header)
@@ -67,12 +77,6 @@ def test_view_settings_header(cmd, header):
     st.builds(
         views.ViewSettings, st.lists(elements=st.text()), header=st.text()),
     st.lists(st.fixed_dictionaries(MPD_FIND_RETURN_DICT)))
-def test_singles_view(viewsettings, find_return):
+def test_custom_view(viewsettings, find_return):
     sel = views.singles_view(monkey_mpc(find_return), viewsettings)
-
-    if sel:
-        assert isinstance(sel, dict)
-        for key in ('file', 'last-modified', 'time', 'duration', 'artist',
-                    'albumartist', 'artistsort', 'title', 'album', 'track',
-                    'date', 'genre'):
-            assert key in sel
+    is_find_return(sel)

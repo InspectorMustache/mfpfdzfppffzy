@@ -29,6 +29,15 @@ class KeyBindings(dict):
         return '--bind={}'.format(','.join(pairs))
 
 
+def coroutine(f):
+    """Prime coroutine by calling next on it once."""
+    def primed(*args, **kwargs):
+        cr = f(*args, **kwargs)
+        next(cr)
+        return cr
+    return primed
+
+
 def notify(msg):
     """
     Try using notify-send to display a notification. If there is no

@@ -5,7 +5,7 @@ import shlex
 import re
 import shutil
 from copy import deepcopy
-from .utils import notify
+from .utils import notify, coroutine
 
 FZF_PROG_OPTS = ['-m', '--height=100%', '--inline-info']
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
@@ -126,16 +126,15 @@ class FilterView():
         return self.mpc.find(*filters_cmd)
 
 
-def get_track_line(track_dict):
+def get_track_output_line(track_dict):
     """
     Create a formatted line from track_dict including track number and title.
     """
     return '{:02} - {}'.format(
-        lax_int(track_dict['track']), track_dict['title']
-    )
+        lax_int(track_dict['track']), track_dict['title'])
 
 
-def get_output_line(*args):
+def get_formatted_output_line(*args):
     """
     Create an output line with each value in args receiving equal space of
     the terminal.
@@ -156,12 +155,36 @@ def get_output_line(*args):
     return output
 
 
-def add_output_lines(track_list):
-    """Add output line to each dict in track_list."""
-    for track_dict in track_list:
-        track_dict['fzf_string'] = get_output_line(
-            track_dict['artist'], track_dict['title'], track_dict['album']
-        )
+def get_dict_output_line(find_dict, *tags):
+    """Create an output line from tags of find_dict."""
+    find_tags = (find_dict[t] for t in tags)
+    return get_formatted_output_line(*find_tags)
+
+
+@coroutine
+def add_entry_to_dict(entry_func, *func_args):
+    """
+    Yield a dictionary from a find result. Passes this dictionary along with
+    func_args to entry_func to generate an output string and add this string to
+    the dictionary with the key 'fzf_string'.
+    """
+    while True:
+        find_entry = yield
+        find_entry['fzf_string'] = entry_func(find_entry, *func_args)
+
+
+def add_entries_to_list(find_list, entry_func, *func_args):
+    """
+    Use entry_func with func_args to create a custom entry for each dict in
+    find_dict.
+    """
+    adder = add_entry_to_dict(entry_func, *func_args)
+    for d in find_list:
+        try:
+            adder.send(d)
+        except StopIteration:
+            break
+    adder.close()
 
 
 def adapt_duplicates(find_list):
@@ -205,6 +228,11 @@ def create_view(items, *args, sort_key=None):
     return (sel.strip('\n'), returncode)
 
 
+def create_view_with_custom_entries(items, entry_func):
+    """Use entry func to add a custom entry to items which will be used by fzf to display entries. """
+    
+
+
 def artist_sorter(item):
     """
     Strip 'The' from artist and sort without case sensitivity.
@@ -246,9 +274,8 @@ def track_view(mpc, view_settings):
     """
     # create a list of nicely formatted strings from the list of dicts we got
     # from mpd
-    tracks = (get_track_line(x) for x in mpc.find(
-        *view_settings.cmd, required_tags=['track', 'title']
-    ))
+    tracks = (get_track_output_line(x) for x in mpc.find(
+        *view_settings.cmd, required_tags=['track', 'title']))
 
     return create_view(tracks, *view_settings.header,
                        sort_key=view_settings.sort_key)
@@ -263,7 +290,8 @@ def singles_view(mpc, view_settings):
     """
     mpd_data = mpc.find(*view_settings.cmd,
                         required_tags=['artist', 'album', 'title'])
-    add_output_lines(mpd_data)
+    add_entries_to_list(mpd_data, get_dict_output_line,
+                        'artist', 'album', 'title')
     singles = (x['fzf_string'] for x in mpd_data)
     sel, _ = create_view(singles, *view_settings.header,
                          sort_key=view_settings.sort_key)
