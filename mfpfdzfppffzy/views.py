@@ -126,9 +126,11 @@ class FilterView():
         return self.mpc.find(*filters_cmd)
 
 
-def get_track_output_line(track_dict):
+def get_track_output_line(track_dict, *args):
     """
-    Create a formatted line from track_dict including track number and title.
+    Create a formatted line from track_dict including track number and
+    title. Additional args will be ignored but are allowed for compatibility
+    with add_entries_to_list.
     """
     return '{:02} - {}'.format(
         lax_int(track_dict['track']), track_dict['title'])
@@ -155,30 +157,30 @@ def get_formatted_output_line(*args):
     return output
 
 
-def get_dict_output_line(find_dict, *tags):
+def get_tag_output_line(find_dict, *tags):
     """Create an output line from tags of find_dict."""
     find_tags = (find_dict[t] for t in tags)
     return get_formatted_output_line(*find_tags)
 
 
 @coroutine
-def add_entry_to_dict(entry_func, *func_args):
+def add_entry_to_dict(entry_func, *entry_func_args):
     """
     Yield a dictionary from a find result. Passes this dictionary along with
-    func_args to entry_func to generate an output string and add this string to
-    the dictionary with the key 'fzf_string'.
+    entry_func_args to entry_func to generate an output string and add this
+    string to the dictionary with the key 'fzf_string'.
     """
     while True:
         find_entry = yield
-        find_entry['fzf_string'] = entry_func(find_entry, *func_args)
+        find_entry['fzf_string'] = entry_func(find_entry, *entry_func_args)
 
 
-def add_entries_to_list(find_list, entry_func, *func_args):
+def add_entries_to_list(find_list, entry_func, entry_func_args):
     """
-    Use entry_func with func_args to create a custom entry for each dict in
+    Use entry_func with entry_func_args to create a custom entry for each dict in
     find_dict.
     """
-    adder = add_entry_to_dict(entry_func, *func_args)
+    adder = add_entry_to_dict(entry_func, *entry_func_args)
     for d in find_list:
         try:
             adder.send(d)
@@ -220,17 +222,34 @@ def pipe_to_fzf(content, *args):
 def create_view(items, *args, sort_key=None):
     """
     Create a fzf view from items. Additional args are passed to
-    fzf. Optionally supply a sort_key for items. Returns a tuple containing the
-    output and returncode of the fzf command.
+    fzf. Optionally supply a sort_key for items. Returns the selected entry or
+    None if selection was cancelled.
     """
     view = '\n'.join(sorted(set(items), key=sort_key))
     sel, returncode = pipe_to_fzf(view, *args)
-    return (sel.strip('\n'), returncode)
+    if returncode == 0:
+        return sel.strip('\n')
+    else:
+        return None
 
 
-def create_view_with_custom_entries(items, entry_func):
-    """Use entry func to add a custom entry to items which will be used by fzf to display entries. """
-    
+def create_view_with_custom_entries(items, entry_func, entry_func_args, *args,
+                                    sort_key=None):
+    """
+    Use entry func to add a custom entry to items which will be used by fzf
+    to display entries. items must be an mpd find return list. Returns the
+    track dict whose entry was selected.
+    """
+    add_entries_to_list(items, entry_func, entry_func_args)
+    entries = (x['fzf_string'] for x in items)
+    sel = create_view(entries, *args, sort_key=sort_key)
+
+    # pull selected dict out of list; return None if nothing was selected
+    try:
+        sel = next(filter(lambda x: x['fzf_string'] == sel, items))
+        return sel
+    except StopIteration:
+        return None
 
 
 def artist_sorter(item):
@@ -274,11 +293,10 @@ def track_view(mpc, view_settings):
     """
     # create a list of nicely formatted strings from the list of dicts we got
     # from mpd
-    tracks = (get_track_output_line(x) for x in mpc.find(
-        *view_settings.cmd, required_tags=['track', 'title']))
-
-    return create_view(tracks, *view_settings.header,
-                       sort_key=view_settings.sort_key)
+    tracks = mpc.find(*view_settings.cmd, required_tags=['track', 'title'])
+    return create_view_with_custom_entries(
+        tracks, get_track_output_line, [], *view_settings.header,
+        sort_key=view_settings.sort_key)
 
 
 def singles_view(mpc, view_settings):
@@ -288,17 +306,8 @@ def singles_view(mpc, view_settings):
     The sort_key argument here applies to the string that is being handed over
     to fzf, which has the format 'Artist | Album | Title'.
     """
-    mpd_data = mpc.find(*view_settings.cmd,
-                        required_tags=['artist', 'album', 'title'])
-    add_entries_to_list(mpd_data, get_dict_output_line,
-                        'artist', 'album', 'title')
-    singles = (x['fzf_string'] for x in mpd_data)
-    sel, _ = create_view(singles, *view_settings.header,
-                         sort_key=view_settings.sort_key)
-
-    # pull selected dict out of list; return None if nothing was selected
-    try:
-        sel = next(filter(lambda x: x['fzf_string'] == sel, mpd_data))
-        return sel
-    except StopIteration:
-        return None
+    tags = ['artist', 'album', 'title']
+    singles = mpc.find(*view_settings.cmd, required_tags=tags)
+    return create_view_with_custom_entries(
+        singles, get_tag_output_line, tags, *view_settings.header,
+        sort_key=view_settings.sort_key)

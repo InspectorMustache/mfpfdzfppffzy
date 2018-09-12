@@ -79,4 +79,5 @@ def test_view_settings_header(cmd, header):
     st.lists(st.fixed_dictionaries(MPD_FIND_RETURN_DICT)))
 def test_custom_view(viewsettings, find_return):
     sel = views.singles_view(monkey_mpc(find_return), viewsettings)
+    sel = views.track_view(monkey_mpc(find_return), viewsettings)
     is_find_return(sel)
