@@ -1,22 +1,28 @@
+import re
+import shutil
 from random import randrange
-
 from hypothesis import given
 import hypothesis.strategies as st
 import mfpfdzfppffzy.views as views
 from pytest import fixture
 
-MPD_FIND_RETURN_DICT = {'file': st.text(),
-                        'last-modified': st.text(),
-                        'time': st.text(),
-                        'duration': st.text(),
-                        'artist': st.text(),
-                        'albumartist': st.text(),
-                        'artistsort': st.text(),
-                        'title': st.text(),
-                        'album': st.text(),
-                        'track': st.text(),
-                        'date': st.text(),
-                        'genre': st.text()}
+TRACK_FORMAT_RX = re.compile(r'^\d{2,} - .+$', flags=re.DOTALL)
+SPACE_RX = re.compile(r'\s+')
+TAG_RX = re.compile(r'\A\S+\Z')
+# text size for each value is at least one because we mpc.find() has been
+# called with the correct require_tags argument
+MPD_FIND_RETURN_DICT = {'file': st.from_regex(TAG_RX),
+                        'last-modified': st.from_regex(TAG_RX),
+                        'time': st.from_regex(TAG_RX),
+                        'duration': st.from_regex(TAG_RX),
+                        'artist': st.from_regex(TAG_RX),
+                        'albumartist': st.from_regex(TAG_RX),
+                        'artistsort': st.from_regex(TAG_RX),
+                        'title': st.from_regex(TAG_RX),
+                        'album': st.from_regex(TAG_RX),
+                        'track': st.from_regex(TAG_RX),
+                        'date': st.from_regex(TAG_RX),
+                        'genre': st.from_regex(TAG_RX)}
 
 
 def monkey_mpc(want_return):
@@ -46,7 +52,7 @@ def monkey_create_view(monkeypatch):
     """
 
     def fake_create_view(items, *args, sort_key=None):
-        items = list(items)
+        items = tuple(items)
         try:
             return items[randrange(0, len(items))], 0
         except ValueError:
@@ -76,8 +82,25 @@ def test_view_settings_header(cmd, header):
 @given(
     st.builds(
         views.ViewSettings, st.lists(elements=st.text()), header=st.text()),
-    st.lists(st.fixed_dictionaries(MPD_FIND_RETURN_DICT)))
+    st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT)))
 def test_custom_view(viewsettings, find_return):
     sel = views.singles_view(monkey_mpc(find_return), viewsettings)
     sel = views.track_view(monkey_mpc(find_return), viewsettings)
     is_find_return(sel)
+
+
+@given(st.fixed_dictionaries(MPD_FIND_RETURN_DICT),
+       st.sets(
+           min_size=1, max_size=len(MPD_FIND_RETURN_DICT),
+           elements=st.sampled_from(tuple(MPD_FIND_RETURN_DICT.keys()))),
+       st.integers(min_value=1, max_value=300))
+def test_string_constructors(monkeypatch, find_dict, tags, term_size):
+    track_str = views.get_track_output_line(find_dict)
+    assert isinstance(track_str, str)
+    assert TRACK_FORMAT_RX.match(track_str)
+
+    monkeypatch.setattr(shutil, 'get_terminal_size', lambda: (term_size, 0))
+
+    tag_str = views.get_tag_output_line(find_dict, *tags)
+    assert isinstance(tag_str, str)
+    assert len(tag_str.split()) == len(list(tags))

@@ -5,9 +5,9 @@ import shlex
 import re
 import shutil
 from copy import deepcopy
-from .utils import notify, coroutine
+from .utils import coroutine
 
-FZF_PROG_OPTS = ['-m', '--height=100%', '--inline-info']
+FZF_PROG_OPTS = ('-m', '--height=100%', '--inline-info')
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
 ARTIST_PREFIX_MATCHER = re.compile(r'^the (.+)', flags=re.IGNORECASE)
 
@@ -15,7 +15,8 @@ ARTIST_PREFIX_MATCHER = re.compile(r'^the (.+)', flags=re.IGNORECASE)
 class ViewSettings():
     """
     A container for settings relevant to creating views.
-    Returns string arguments for command and header in a processible list form.
+    Returns string arguments for command and header in a processible tuple
+    form.
     """
     def __init__(self, cmd, header=None, sort_key=None):
         self.cmd = cmd
@@ -24,8 +25,8 @@ class ViewSettings():
 
     @property
     def header(self):
-        """Return header as list for use in Popen and the like."""
-        return ['--header', self.header_str]
+        """Return header as tuple for use in Popen and the like."""
+        return ('--header', self.header_str)
 
     @header.setter
     def header(self, cmd):
@@ -37,7 +38,7 @@ class FilterView():
     """
     Create a view consisting of several views that progressively filter the
     selection. The most obvious example would be Artist->Album->Title.
-    FilterView takes in a list of ViewSettings from which these views are
+    FilterView takes in a sequence of ViewSettings from which these views are
     created.
     When dynamic_headers is True, headers will be created based on the last
     selection for every view but the first. In this case, provided headers are
@@ -45,7 +46,7 @@ class FilterView():
     """
     def __init__(self, mpc, views, dynamic_headers=None,
                  final_view='track_view'):
-        # the caller must make sure that the list is appropriately ordered
+        # the caller must make sure that the sequence is appropriately ordered
         self.mpc = mpc
         self.views = views
         self.dynamic_headers = dynamic_headers
@@ -126,14 +127,14 @@ class FilterView():
         return self.mpc.find(*filters_cmd)
 
 
-def get_track_output_line(track_dict, *args):
+def get_track_output_line(find_dict, *args):
     """
-    Create a formatted line from track_dict including track number and
+    Create a formatted line from find_dict including track number and
     title. Additional args will be ignored but are allowed for compatibility
     with add_entries_to_list.
     """
     return '{:02} - {}'.format(
-        lax_int(track_dict['track']), track_dict['title'])
+        lax_int(find_dict['track']), find_dict['title'])
 
 
 def get_formatted_output_line(*args):
@@ -144,13 +145,16 @@ def get_formatted_output_line(*args):
     okay_w, _ = shutil.get_terminal_size()
     # fzf needs some columns for the margin
     okay_w -= 4
+    # define a min_width here so things don't fall apart -  if the terminal is
+    # THIS small, everything's gonna look like shit anyway
+    min_w = len(args) * 4
+    okay_w = okay_w if okay_w >= min_w else min_w
     item_w = int(okay_w / len(args))
 
-    # truncate if necessary
     # there should be at least one space between (table) columns for better
-    # optics
+    # optics (that's where the (item_w -1) comes in)
     output = map(
-        lambda x: '{}…'.format(x[:item_w - 2]) if len(x) > item_w else x,
+        lambda x: '{}…'.format(x[:item_w - 2]) if len(x) > (item_w - 1) else x,
         args)
     # pad if necessary and join
     output = ''.join([x.ljust(item_w) for x in output])
@@ -177,22 +181,19 @@ def add_entry_to_dict(entry_func, *entry_func_args):
 
 def add_entries_to_list(find_list, entry_func, entry_func_args):
     """
-    Use entry_func with entry_func_args to create a custom entry for each dict in
-    find_dict.
+    Use entry_func with entry_func_args to create a custom entry for each dict
+    in find_dict.
     """
     adder = add_entry_to_dict(entry_func, *entry_func_args)
     for d in find_list:
-        try:
-            adder.send(d)
-        except StopIteration:
-            break
+        adder.send(d)
     adder.close()
 
 
 def adapt_duplicates(find_list):
     """Make sure the fzf_str key of each item in find_list is unique by
     appending NUL."""
-    fzf_strs = [x['fzf_str'] for x in find_list]
+    fzf_strs = tuple(x['fzf_str'] for x in find_list)
     dups = filter(lambda x: fzf_strs.count(x['fzf_str']) > 1, find_list)
 
     for d in dups:
@@ -205,18 +206,14 @@ def adapt_duplicates(find_list):
 
 
 def pipe_to_fzf(content, *args):
-    """
-    Pipe content to fzf and return a tuple containing (stdout, stderr).
-    """
+    """Pipe content to fzf and return a tuple (stdout, stderr)."""
     fzf = subprocess.Popen(['fzf', *FZF_DEFAULT_OPTS, *FZF_PROG_OPTS, *args],
                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                            encoding='utf-8')
 
-    try:
-        stdout, stderr = fzf.communicate(input=content)
-        return stdout, fzf.returncode
-    except Exception:  # yes yes, bad I know
-        notify('Error running fzf')
+    # TODO: exception handling
+    stdout, stderr = fzf.communicate(input=content)
+    return stdout, fzf.returncode
 
 
 def create_view(items, *args, sort_key=None):
@@ -276,8 +273,7 @@ def lax_int(x):
 def container_view(mpc, view_settings):
     """
     Use args to build a view that refers to another underlying view (such as
-    a list of artists or albums). Optionally specify sorting with sort_key.
-    Return the selection.
+    a list of artists or albums). Return the selection.
     """
     entries = mpc.list(*view_settings.cmd)
     return create_view(entries, *view_settings.header,
@@ -291,8 +287,6 @@ def track_view(mpc, view_settings):
     Optionally specify sorting with sort_key and a header for fzf.
     Return the selection.
     """
-    # create a list of nicely formatted strings from the list of dicts we got
-    # from mpd
     tracks = mpc.find(*view_settings.cmd, required_tags=['track', 'title'])
     return create_view_with_custom_entries(
         tracks, get_track_output_line, [], *view_settings.header,
