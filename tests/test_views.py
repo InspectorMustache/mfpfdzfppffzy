@@ -1,10 +1,14 @@
 import re
 import shutil
-from random import randrange
-from hypothesis import given
 import hypothesis.strategies as st
 import mfpfdzfppffzy.views as views
+from copy import copy
+from random import randrange
+from hypothesis import given
 from pytest import fixture
+
+# NoneType for use with isinstance() as part of a tuple
+NoneType = type(None)
 
 TRACK_FORMAT_RX = re.compile(r'^\d{2,} - .+$', flags=re.DOTALL)
 SPACE_RX = re.compile(r'\s+')
@@ -54,17 +58,17 @@ def monkey_create_view(monkeypatch):
     def fake_create_view(items, *args, sort_key=None):
         items = tuple(items)
         try:
-            return items[randrange(0, len(items))], 0
+            return items[randrange(0, len(items))]
         except ValueError:
-            return '', 1
+            return None
 
     monkeypatch.setattr(views, 'create_view', fake_create_view)
 
 
 def is_find_return(ret):
     """Assert that ret is a single dict as returned by ConnectClient.find."""
+    assert isinstance(ret, (dict, NoneType))
     if ret:
-        assert isinstance(ret, dict)
         for key in ('file', 'last-modified', 'time', 'duration', 'artist',
                     'albumartist', 'artistsort', 'title', 'album', 'track',
                     'date', 'genre'):
@@ -82,10 +86,17 @@ def test_view_settings_header(cmd, header):
 @given(
     st.builds(
         views.ViewSettings, st.lists(elements=st.text()), header=st.text()),
-    st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT)))
-def test_custom_view(viewsettings, find_return):
-    sel = views.singles_view(monkey_mpc(find_return), viewsettings)
-    sel = views.track_view(monkey_mpc(find_return), viewsettings)
+    st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT)),
+    st.lists(st.text()))
+def test_custom_view(viewsettings, find_return, list_return):
+    sel = views.container_view(monkey_mpc(list_return), viewsettings)
+    assert isinstance(sel, (str, NoneType))
+
+    mpc_find = monkey_mpc(find_return)
+    sel = views.singles_view(mpc_find, viewsettings)
+    is_find_return(sel)
+
+    sel = views.track_view(mpc_find, viewsettings)
     is_find_return(sel)
 
 
@@ -104,3 +115,19 @@ def test_string_constructors(monkeypatch, find_dict, tags, term_size):
     tag_str = views.get_tag_output_line(find_dict, *tags)
     assert isinstance(tag_str, str)
     assert len(tag_str.split()) == len(list(tags))
+
+
+@given(st.text())
+def test_duplicate_handling(dup_text):
+    find_dict = MPD_FIND_RETURN_DICT
+    find_dict['fzf_str'] = dup_text
+
+    # if it works with 4, it should work with any number of duplicates
+    dups = []
+    for _ in range(4):
+        d = copy(find_dict)
+        dups.append(d)
+
+    views.adapt_duplicates(dups)
+    fzf_strs = [x['fzf_str'] for x in dups]
+    assert len(fzf_strs) == len(set(fzf_strs))

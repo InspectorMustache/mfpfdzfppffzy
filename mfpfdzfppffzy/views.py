@@ -193,16 +193,15 @@ def add_entries_to_list(find_list, entry_func, entry_func_args):
 def adapt_duplicates(find_list):
     """Make sure the fzf_str key of each item in find_list is unique by
     appending NUL."""
-    fzf_strs = tuple(x['fzf_str'] for x in find_list)
-    dups = filter(lambda x: fzf_strs.count(x['fzf_str']) > 1, find_list)
 
-    for d in dups:
-        occur_old = fzf_strs.count(d['fzf_str'])
-        occur_new = fzf_strs.count(d['fzf_str'])
-        while occur_old >= occur_new:
-            # append until unique
+    while True:
+        fzf_strs = [x['fzf_str'] for x in find_list]
+        dups = filter(lambda x: fzf_strs.count(x['fzf_str']) > 1, find_list)
+        try:
+            d = next(dups)
             d['fzf_str'] += '\u0000'
-            occur_new = fzf_strs.count(d['fzf_str'])
+        except StopIteration:
+            break
 
 
 def pipe_to_fzf(content, *args):
