@@ -75,8 +75,7 @@ class ConnectClient(mpd.MPDClient):
     def _get_fifo(self):
         """Create fifo in temp directory."""
         while True:
-            # this should be safer, right?
-            try:
+            try:  # this should be safer, right?
                 path = tempfile.mktemp(prefix='mfpfdzfppffzy.')
                 os.mkfifo(path)
                 break
@@ -118,9 +117,6 @@ class ConnectClient(mpd.MPDClient):
         """Connect to mpd by using class fields."""
         super().connect(self.addr, *args, port=self.port, **kwargs)
 
-    def list(self, *args, **kwargs):
-        return super().list(*args, **kwargs)
-
     def find(self, *args, **kwargs):
         # make sure we get all the tags we need so we don't get a key error
         self.required_tags = kwargs.pop('required_tags', False)
@@ -145,6 +141,3 @@ class ConnectClient(mpd.MPDClient):
             return "OK"
         except (IndexError, AttributeError):
             return "ERR '{}' is not a valid command.".format(cmd_str)
-
-
-MPD_C = ConnectClient()

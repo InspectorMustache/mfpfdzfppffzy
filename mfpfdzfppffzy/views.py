@@ -53,9 +53,7 @@ class FilterView():
         self.final_view = final_view
         self.state = 0
         self.final_state = len(views)
-        self.returncode = 0  # last returned returncode
         self.selections = {}  # selections of each state
-        self.filter_cmd = {}  # filters retrieved from each state
 
     @property
     def active_view(self):
@@ -86,10 +84,11 @@ class FilterView():
         view = self.get_adapted_view()
 
         if self.state < self.final_state - 1:
-            self.sel, self.returncode = container_view(self.mpc, view)
+            self.sel = container_view(self.mpc, view)
         else:
             # TODO: Exception handling here
-            getattr(sys.modules[__name__], self.final_view)(self.mpc, view)
+            self.sel = getattr(
+                sys.modules[__name__], self.final_view)(self.mpc, view)
 
     def append_filters_to_list(self, l):
         """Takes a list l and appends all selected filters to it."""
@@ -115,10 +114,10 @@ class FilterView():
         """Move through views until we reach the final one."""
         while self.state in range(0, self.final_state):
             self.call_view_function()
-            if self.returncode == 0:
-                self.move_forward()
-            else:
+            if self.sel is None:
                 self.move_backward()
+            else:
+                self.move_forward()
 
     def get_filtered_selection(self):
         """Get a list of items based on the selected filters."""
@@ -229,13 +228,14 @@ def create_view(items, *args, sort_key=None):
         return None
 
 
-def create_view_with_custom_entries(items, entry_func, entry_func_args, *args,
-                                    sort_key=None):
+def create_view_with_custom_entries(items, entry_func, *args,
+                                    entry_func_args=None, sort_key=None):
     """
     Use entry func to add a custom entry to items which will be used by fzf
     to display entries. items must be an mpd find return list. Returns the
     track dict whose entry was selected.
     """
+    entry_func_args = entry_func_args or []
     add_entries_to_list(items, entry_func, entry_func_args)
     entries = (x['fzf_string'] for x in items)
     sel = create_view(entries, *args, sort_key=sort_key)
@@ -288,7 +288,7 @@ def track_view(mpc, view_settings):
     """
     tracks = mpc.find(*view_settings.cmd, required_tags=['track', 'title'])
     return create_view_with_custom_entries(
-        tracks, get_track_output_line, [], *view_settings.header,
+        tracks, get_track_output_line, *view_settings.header,
         sort_key=view_settings.sort_key)
 
 
@@ -302,5 +302,5 @@ def singles_view(mpc, view_settings):
     tags = ['artist', 'album', 'title']
     singles = mpc.find(*view_settings.cmd, required_tags=tags)
     return create_view_with_custom_entries(
-        singles, get_tag_output_line, tags, *view_settings.header,
-        sort_key=view_settings.sort_key)
+        singles, get_tag_output_line, *view_settings.header,
+        entry_func_args=tags, sort_key=view_settings.sort_key)

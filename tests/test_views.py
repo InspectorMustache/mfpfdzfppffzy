@@ -1,9 +1,9 @@
 import re
 import shutil
+import random
 import hypothesis.strategies as st
 import mfpfdzfppffzy.views as views
-from copy import copy
-from random import randrange
+from copy import copy, deepcopy
 from hypothesis import given
 from pytest import fixture
 
@@ -29,7 +29,7 @@ MPD_FIND_RETURN_DICT = {'file': st.from_regex(TAG_RX),
                         'genre': st.from_regex(TAG_RX)}
 
 
-def monkey_mpc(want_return):
+def monkey_mpc(find_return=None, list_return=None):
     """
     Return a ConnectClient class instance whose find and list methods just
     return want_return. (Not really monkeypatching, this is just passed instead
@@ -37,13 +37,14 @@ def monkey_mpc(want_return):
     """
     class FakeConnectClient():
         def __init__(self, *args, **kwargs):
-            pass
+            self.find_return = find_return
+            self.list_return = list_return
 
         def find(self, *args, **kwargs):
-            return want_return
+            return self.find_return
 
         def list(self, *args, **kwargs):
-            return want_return
+            return self.list_return
 
     return FakeConnectClient()
 
@@ -58,7 +59,7 @@ def monkey_create_view(monkeypatch):
     def fake_create_view(items, *args, sort_key=None):
         items = tuple(items)
         try:
-            return items[randrange(0, len(items))]
+            return items[random.randrange(0, len(items))]
         except ValueError:
             return None
 
@@ -89,14 +90,15 @@ def test_view_settings_header(cmd, header):
     st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT)),
     st.lists(st.text()))
 def test_custom_view(viewsettings, find_return, list_return):
-    sel = views.container_view(monkey_mpc(list_return), viewsettings)
+    mpc = monkey_mpc(list_return=list_return)
+    sel = views.container_view(mpc, viewsettings)
     assert isinstance(sel, (str, NoneType))
 
-    mpc_find = monkey_mpc(find_return)
-    sel = views.singles_view(mpc_find, viewsettings)
+    mpc.find_return = find_return
+    sel = views.singles_view(mpc, viewsettings)
     is_find_return(sel)
 
-    sel = views.track_view(mpc_find, viewsettings)
+    sel = views.track_view(mpc, viewsettings)
     is_find_return(sel)
 
 
@@ -117,9 +119,8 @@ def test_string_constructors(monkeypatch, find_dict, tags, term_size):
     assert len(tag_str.split()) == len(list(tags))
 
 
-@given(st.text())
-def test_duplicate_handling(dup_text):
-    find_dict = MPD_FIND_RETURN_DICT
+@given(st.text(), st.fixed_dictionaries(MPD_FIND_RETURN_DICT))
+def test_duplicate_handling(dup_text, find_dict):
     find_dict['fzf_str'] = dup_text
 
     # if it works with 4, it should work with any number of duplicates
@@ -131,3 +132,37 @@ def test_duplicate_handling(dup_text):
     views.adapt_duplicates(dups)
     fzf_strs = [x['fzf_str'] for x in dups]
     assert len(fzf_strs) == len(set(fzf_strs))
+
+
+# TODO: test with min_size = 0 once this works
+@given(st.lists(elements=st.fixed_dictionaries((MPD_FIND_RETURN_DICT)),
+                min_size=1),
+       st.text())
+def test_filter_view(library, header):
+    # build views from every mpd tag
+    view_list = [views.ViewSettings([x], header=header) for x in
+                 MPD_FIND_RETURN_DICT]
+    mpc = monkey_mpc()
+    filter_view = views.FilterView(mpc, view_list, dynamic_headers=True)
+
+    list_returns = {}
+    for index, view in enumerate(view_list):
+        view_filter = view.cmd[0]
+        # the view_filter value of every dict in library is a possible
+        # selection so pick one at random
+        return_value = random.choice(
+            tuple(map(lambda x: x[view_filter], library)))
+        list_returns[index] = return_value
+
+    mpc.list_return = list_returns[filter_view.state]
+    mpc.find_return = [random.choice(library)]
+
+    # test going through all the views
+    filter_view.pass_through()
+
+    # this is a rather weak test because the find method is just overridden to
+    # return any match from library
+    # however without relying on an actual mpd database, I think this is the
+    # best we've got
+    for find_dict in filter_view.get_filtered_selection():
+        is_find_return(find_dict)
