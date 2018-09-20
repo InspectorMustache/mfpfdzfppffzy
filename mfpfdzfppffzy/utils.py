@@ -1,4 +1,3 @@
-from subprocess import run
 import re
 
 PROG_NAME = 'MPD'
@@ -19,14 +18,20 @@ class KeyBindings(dict):
         """Adapt keybinds if they are wrapped in mfp()."""
         match = MFP_BIND_RE.match(value)
         if match:
-            self[key] = 'execute#echo {} {{}} > {}#'.format(
+            self.__dict__[key] = 'execute#echo {} {{}} > {}#'.format(
                 match.group(1), self.fifo)
         else:
-            self[key] = value
+            self.__dict__[key] = value
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
 
     def __str__(self):
         pairs = (':'.join(t) for t in self.items())
         return '--bind={}'.format(','.join(pairs))
+
+    def items(self):
+        return self.__dict__.items()
 
 
 def coroutine(f):
