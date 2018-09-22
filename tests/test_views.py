@@ -76,17 +76,29 @@ def is_find_return(ret):
             assert key in ret
 
 
-@given(st.lists(elements=st.text()), st.text())
-def test_view_settings_header(cmd, header):
-    vs = views.ViewSettings(cmd, header=header)
+@given(st.lists(elements=st.text(min_size=1), min_size=1),
+       st.lists(elements=st.text(min_size=1), min_size=1))
+def test_view_settings_header(cmd, tags):
+    vs = views.ViewSettings(cmd)
+    assert not vs.header
+    vs.dynamic_headers = views.NO_DYNAMIC_HEADERS
+    vs.update_headers()
+    assert not vs.header
+
+    vs.dynamic_headers = views.DYNAMIC_HEADERS
+    vs.update_headers()
     assert len(vs.header) == 2
     assert vs.header[0] == '--header'
-    assert vs.header[1] == header
+
+    vs.header_str = ''
+    vs.dynamic_headers = views.CAT_DYNAMIC_HEADERS
+    vs.update_headers(*tags)
+    assert len(vs.header) == 2
+    assert vs.header[0] == '--header'
 
 
 @given(
-    st.builds(
-        views.ViewSettings, st.lists(elements=st.text()), header=st.text()),
+    st.builds(views.ViewSettings, st.lists(elements=st.text())),
     st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT)),
     st.lists(st.text()))
 def test_custom_view(viewsettings, find_return, list_return):
@@ -136,12 +148,10 @@ def test_duplicate_handling(dup_text, find_dict):
 
 # TODO: test with min_size = 0 once this works
 @given(st.lists(elements=st.fixed_dictionaries((MPD_FIND_RETURN_DICT)),
-                min_size=1),
-       st.text())
-def test_filter_view(library, header):
+                min_size=1))
+def test_filter_view(library):
     # build views from every mpd tag
-    view_list = [views.ViewSettings([x], header=header) for x in
-                 MPD_FIND_RETURN_DICT]
+    view_list = [views.ViewSettings([x]) for x in MPD_FIND_RETURN_DICT]
     mpc = monkey_mpc()
     filter_view = views.FilterView(mpc, view_list, dynamic_headers=True)
 

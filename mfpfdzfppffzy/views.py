@@ -11,6 +11,11 @@ FZF_PROG_OPTS = ('-m', '--height=100%', '--inline-info')
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
 ARTIST_PREFIX_MATCHER = re.compile(r'^the (.+)', flags=re.IGNORECASE)
 
+# constants for the three types of dynamic headers
+NO_DYNAMIC_HEADERS = 0
+DYNAMIC_HEADERS = 1
+CAT_DYNAMIC_HEADERS = 2
+
 
 class ViewSettings():
     """
@@ -18,20 +23,32 @@ class ViewSettings():
     Returns string arguments for command and header in a processible tuple
     form.
     """
-    def __init__(self, cmd, header=None, sort_key=None):
+    def __init__(self, cmd, sort_key=None, dynamic_headers=NO_DYNAMIC_HEADERS):
         self.cmd = cmd
-        self.header_str = header or ''
         self.sort_key = sort_key
+        self.dynamic_headers = dynamic_headers
+        self.header_str = ''
 
     @property
     def header(self):
         """Return header as tuple for use in Popen and the like."""
-        return ('--header', self.header_str)
+        return ('--header', self.header_str) if self.header_str else ()
 
     @header.setter
-    def header(self, cmd):
+    def header(self, value):
         """Pass str input for header to self.header_str."""
-        self.header_str = cmd
+        self.header_str = value
+
+    def update_headers(self, *args):
+        """
+        Create headers with args based on whether dynamic headers are enabled
+        or not.
+        """
+        if self.dynamic_headers == DYNAMIC_HEADERS:
+            self.header_str = self.cmd[-1]
+        elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
+            self.header_str = get_formatted_output_line(
+                *[x.capitalize() for x in args])
 
 
 class FilterView():
@@ -229,13 +246,12 @@ def create_view(items, *args, sort_key=None):
 
 
 def create_view_with_custom_entries(items, entry_func, *args,
-                                    entry_func_args=None, sort_key=None):
+                                    entry_func_args=(), sort_key=None):
     """
     Use entry func to add a custom entry to items which will be used by fzf
     to display entries. items must be an mpd find return list. Returns the
     track dict whose entry was selected.
     """
-    entry_func_args = entry_func_args or []
     add_entries_to_list(items, entry_func, entry_func_args)
     entries = (x['fzf_string'] for x in items)
     sel = create_view(entries, *args, sort_key=sort_key)
@@ -287,6 +303,7 @@ def track_view(mpc, view_settings):
     Return the selection.
     """
     tracks = mpc.find(*view_settings.cmd, required_tags=['track', 'title'])
+    view_settings.update_headers()
     return create_view_with_custom_entries(
         tracks, get_track_output_line, *view_settings.header,
         sort_key=view_settings.sort_key)
@@ -299,8 +316,9 @@ def singles_view(mpc, view_settings):
     The sort_key argument here applies to the string that is being handed over
     to fzf, which has the format 'Artist | Album | Title'.
     """
-    tags = ['artist', 'album', 'title']
+    tags = ('artist', 'album', 'title')
     singles = mpc.find(*view_settings.cmd, required_tags=tags)
+    view_settings.update_headers(*tags)
     return create_view_with_custom_entries(
         singles, get_tag_output_line, *view_settings.header,
         entry_func_args=tags, sort_key=view_settings.sort_key)
