@@ -35,6 +35,14 @@ def mfp(ctx, mpd_host, mpd_port):
     ctx.obj = (mpd_host, mpd_port)
 
 
+def run_with_args(view_func, ctx, cmd, bind, dynamic_headers):
+    """Process arguments and call view_func."""
+    mpc = get_mpc_from_context(ctx)
+    dynamic_headers = translate_dynamic_headers(dynamic_headers)
+    view_settings = views.ViewSettings(cmd, dynamic_headers=dynamic_headers)
+    view_func(mpc, view_settings)
+
+
 @mfp.command()
 @click.argument('cmd', nargs=-1, required=True)
 @click.option('--bind')
@@ -43,10 +51,7 @@ def mfp(ctx, mpd_host, mpd_port):
 @click.pass_context
 def singles(ctx, cmd, bind, dynamic_headers):
     """Use a three-pane listing"""
-    mpc = get_mpc_from_context(ctx)
-    dynamic_headers = translate_dynamic_headers(dynamic_headers)
-    view_settings = views.ViewSettings(cmd, dynamic_headers=dynamic_headers)
-    views.singles_view(mpc, view_settings)
+    run_with_args(views.singles_view, ctx, cmd, bind, dynamic_headers)
 
 
 @mfp.command()
@@ -57,10 +62,18 @@ def singles(ctx, cmd, bind, dynamic_headers):
 @click.pass_context
 def tracks(ctx, cmd, bind, dynamic_headers):
     """List tracks by track number and song title"""
-    mpc = get_mpc_from_context(ctx)
-    dynamic_headers = translate_dynamic_headers(dynamic_headers)
-    view_settings = views.ViewSettings(cmd, dynamic_headers=dynamic_headers)
-    views.track_view(mpc, view_settings)
+    run_with_args(views.track_view, ctx, cmd, bind, dynamic_headers)
+
+
+@mfp.command()
+@click.argument('cmd', nargs=-1, required=True)
+@click.option('--bind')
+@click.option('--dynamic-headers',
+              type=click.Choice(['yes', 'no']))
+@click.pass_context
+def container(ctx, cmd, bind, dynamic_headers):
+    """Simple listing intended for larger units like artists or albums"""
+    run_with_args(views.container_view, ctx, cmd, bind, dynamic_headers)
 
 
 if __name__ == '__main__':

@@ -23,9 +23,12 @@ class ViewSettings():
     Returns string arguments for command and header in a processible tuple
     form.
     """
-    def __init__(self, cmd, sort_key=None, dynamic_headers=NO_DYNAMIC_HEADERS):
+    def __init__(self, cmd, sort_field=None, the_sort=False,
+                 keybinds=None, dynamic_headers=NO_DYNAMIC_HEADERS):
         self.cmd = cmd
-        self.sort_key = sort_key
+        self.the_sort = the_sort  # include/don't include "the" when sorting
+        self.sort_field = sort_field
+        self.keybinds = keybinds
         self.dynamic_headers = dynamic_headers
         self.header_str = ''
 
@@ -45,7 +48,7 @@ class ViewSettings():
         or not.
         """
         if self.dynamic_headers == DYNAMIC_HEADERS:
-            self.header_str = self.cmd[-1]
+            self.header_str = self.cmd[-1].capitalize()
         elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
             self.header_str = get_formatted_output_line(
                 *[x.capitalize() for x in args])
@@ -198,24 +201,26 @@ def add_entry_to_dict(entry_func, *entry_func_args):
 def add_entries_to_list(find_list, entry_func, entry_func_args):
     """
     Use entry_func with entry_func_args to create a custom entry for each dict
-    in find_dict.
+    in find_dict. Make sure there are no duplicates afterwards.
     """
     adder = add_entry_to_dict(entry_func, *entry_func_args)
     for d in find_list:
         adder.send(d)
+
     adder.close()
+    adapt_find_duplicates(find_list)
 
 
-def adapt_duplicates(find_list):
-    """Make sure the fzf_str key of each item in find_list is unique by
+def adapt_find_duplicates(find_list):
+    """Make sure the fzf_string key of each item in find_list is unique by
     appending NUL."""
 
     while True:
-        fzf_strs = [x['fzf_str'] for x in find_list]
-        dups = filter(lambda x: fzf_strs.count(x['fzf_str']) > 1, find_list)
+        fzf_strs = [x['fzf_string'] for x in find_list]
+        dups = filter(lambda x: fzf_strs.count(x['fzf_string']) > 1, find_list)
         try:
             d = next(dups)
-            d['fzf_str'] += '\u0000'
+            d['fzf_string'] += '\u0000'
         except StopIteration:
             break
 
@@ -231,13 +236,12 @@ def pipe_to_fzf(content, *args):
     return stdout, fzf.returncode
 
 
-def create_view(items, *args, sort_key=None):
+def create_view(items, *args):
     """
     Create a fzf view from items. Additional args are passed to
-    fzf. Optionally supply a sort_key for items. Returns the selected entry or
-    None if selection was cancelled.
+    fzf. Returns the selected entry or None if selection was cancelled.
     """
-    view = '\n'.join(sorted(set(items), key=sort_key))
+    view = '\n'.join(items)
     sel, returncode = pipe_to_fzf(view, *args)
     if returncode == 0:
         return sel.strip('\n')
@@ -245,18 +249,31 @@ def create_view(items, *args, sort_key=None):
         return None
 
 
-def create_view_with_custom_entries(items, entry_func, *args,
-                                    entry_func_args=(), sort_key=None):
+def create_plain_view(items, view_settings):
+    """Create a view from str_list with sorting it first."""
+    key_func = make_sort_function(sort_field=view_settings.sort_field,
+                                  the_sort=view_settings.the_sort)
+    items.sort(key=key_func)
+    create_view(items, *view_settings.header)
+
+
+def create_view_with_custom_entries(items, entry_func, view_settings,
+                                    entry_func_args=()):
     """
     Use entry func to add a custom entry to items which will be used by fzf
     to display entries. items must be an mpd find return list. Returns the
     track dict whose entry was selected.
     """
     add_entries_to_list(items, entry_func, entry_func_args)
-    entries = (x['fzf_string'] for x in items)
-    sel = create_view(entries, *args, sort_key=sort_key)
+    entries = [x['fzf_string'] for x in items]
+    key_func = make_sort_function(sort_field=view_settings.sort_field,
+                                  the_sort=view_settings.the_sort)
+    entries.sort(key=key_func)
+    sel = create_view(entries, *view_settings.header)
 
     # pull selected dict out of list; return None if nothing was selected
+    # TODO: this probably isn't needed here, for stdout it should be enough if
+    # the selection is echoed
     try:
         sel = next(filter(lambda x: x['fzf_string'] == sel, items))
         return sel
@@ -264,15 +281,29 @@ def create_view_with_custom_entries(items, entry_func, *args,
         return None
 
 
-def artist_sorter(item):
+def make_sort_function(sort_field=None, the_sort=False):
     """
-    Strip 'The' from artist and sort without case sensitivity.
+    Make a sort key function. If sort_field is provided, the structure to be
+    sorted is assumed to be a find dict and sort_field will be used for
+    sorting. Otherwise the structure is assumed to be a simple list of
+    strings. the_sort controls whether or not a prepending 'The' is ignored or
+    not.
     """
-    mo = ARTIST_PREFIX_MATCHER.match(item)
-    if mo:
-        return mo.group(1).lower()
+    if not the_sort:
+        if sort_field:
+            return lambda x: x[sort_field]
+        else:
+            return lambda x: x.lower()
     else:
-        return item.lower()
+        if sort_field:
+            def key_sort(x):
+                mo = ARTIST_PREFIX_MATCHER.match(x[sort_field])
+                return mo.group(1).lower() if mo else x[sort_field].lower()
+        else:
+            def key_sort(x):
+                mo = ARTIST_PREFIX_MATCHER.match(x)
+                return mo.group(1).lower() if mo else x.lower()
+        return key_sort
 
 
 def lax_int(x):
@@ -291,34 +322,30 @@ def container_view(mpc, view_settings):
     a list of artists or albums). Return the selection.
     """
     entries = mpc.list(*view_settings.cmd)
-    return create_view(entries, *view_settings.header,
-                       sort_key=view_settings.sort_key)
+    view_settings.update_headers()
+    return create_plain_view(entries, view_settings)
 
 
 def track_view(mpc, view_settings):
     """
     Use args to build a view listing tracks with their track
     numbers.
-    Optionally specify sorting with sort_key and a header for fzf.
+    Optionally specify sorting with sort_field and a header for fzf.
     Return the selection.
     """
     tracks = mpc.find(*view_settings.cmd, required_tags=['track', 'title'])
     view_settings.update_headers()
     return create_view_with_custom_entries(
-        tracks, get_track_output_line, *view_settings.header,
-        sort_key=view_settings.sort_key)
+        tracks, get_track_output_line, view_settings)
 
 
 def singles_view(mpc, view_settings):
     """
     Use args as commands to the MPD Client and build a track-based view.
-
-    The sort_key argument here applies to the string that is being handed over
-    to fzf, which has the format 'Artist | Album | Title'.
     """
     tags = ('artist', 'album', 'title')
     singles = mpc.find(*view_settings.cmd, required_tags=tags)
     view_settings.update_headers(*tags)
     return create_view_with_custom_entries(
-        singles, get_tag_output_line, *view_settings.header,
-        entry_func_args=tags, sort_key=view_settings.sort_key)
+        singles, get_tag_output_line, view_settings,
+        entry_func_args=tags)

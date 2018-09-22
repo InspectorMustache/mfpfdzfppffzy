@@ -56,7 +56,7 @@ def monkey_create_view(monkeypatch):
     list it's passed.
     """
 
-    def fake_create_view(items, *args, sort_key=None):
+    def fake_create_view(items, *args):
         items = tuple(items)
         try:
             return items[random.randrange(0, len(items))]
@@ -66,7 +66,7 @@ def monkey_create_view(monkeypatch):
     monkeypatch.setattr(views, 'create_view', fake_create_view)
 
 
-def is_find_return(ret):
+def is_find_return_sel(ret):
     """Assert that ret is a single dict as returned by ConnectClient.find."""
     assert isinstance(ret, (dict, NoneType))
     if ret:
@@ -108,10 +108,10 @@ def test_custom_view(viewsettings, find_return, list_return):
 
     mpc.find_return = find_return
     sel = views.singles_view(mpc, viewsettings)
-    is_find_return(sel)
+    is_find_return_sel(sel)
 
     sel = views.track_view(mpc, viewsettings)
-    is_find_return(sel)
+    is_find_return_sel(sel)
 
 
 @given(st.fixed_dictionaries(MPD_FIND_RETURN_DICT),
@@ -133,7 +133,7 @@ def test_string_constructors(monkeypatch, find_dict, tags, term_size):
 
 @given(st.text(), st.fixed_dictionaries(MPD_FIND_RETURN_DICT))
 def test_duplicate_handling(dup_text, find_dict):
-    find_dict['fzf_str'] = dup_text
+    find_dict['fzf_string'] = dup_text
 
     # if it works with 4, it should work with any number of duplicates
     dups = []
@@ -141,8 +141,8 @@ def test_duplicate_handling(dup_text, find_dict):
         d = copy(find_dict)
         dups.append(d)
 
-    views.adapt_duplicates(dups)
-    fzf_strs = [x['fzf_str'] for x in dups]
+    views.adapt_find_duplicates(dups)
+    fzf_strs = [x['fzf_string'] for x in dups]
     assert len(fzf_strs) == len(set(fzf_strs))
 
 
@@ -158,10 +158,10 @@ def test_filter_view(library):
     list_returns = {}
     for index, view in enumerate(view_list):
         view_filter = view.cmd[0]
-        # the view_filter value of every dict in library is a possible
-        # selection so pick one at random
-        return_value = random.choice(
-            tuple(map(lambda x: x[view_filter], library)))
+        # very difficult to do real testing here without reimplementing the mpd
+        # library - so just return a list of all values of the provided tag for
+        # mpc.list
+        return_value = [x[view_filter] for x in library]
         list_returns[index] = return_value
 
     mpc.list_return = list_returns[filter_view.state]
@@ -170,9 +170,34 @@ def test_filter_view(library):
     # test going through all the views
     filter_view.pass_through()
 
-    # this is a rather weak test because the find method is just overridden to
+    # this is a rather weak test because the find method is overridden to just
     # return any match from library
     # however without relying on an actual mpd database, I think this is the
     # best we've got
     for find_dict in filter_view.get_filtered_selection():
-        is_find_return(find_dict)
+        is_find_return_sel(find_dict)
+
+
+@given(st.lists(elements=st.fixed_dictionaries((MPD_FIND_RETURN_DICT))))
+def test_sorting(find_list):
+    list_list = [x['artist'] for x in find_list]
+
+    # sort list of find dicts
+    key_func = views.make_sort_function(sort_field='artist')
+    sorted_find_list = sorted(find_list, key=key_func)
+
+    # sort list of list entries
+    key_func = views.make_sort_function()
+    sorted_list_list = sorted(list_list, key=key_func)
+    check_list = [x['artist'] for x in sorted_find_list]
+    assert check_list == sorted_list_list
+
+    # sort with 'the' stripping
+    for d in find_list:
+        d['artist'] = 'The {}'.format(d['artist'])
+
+    key_func = views.make_sort_function(sort_field='artist', the_sort=True)
+    sorted_find_list_the = sorted(find_list, key=key_func)
+    check_list_no_the = [x['time'] for x in sorted_find_list]
+    check_list_the = [x['time'] for x in sorted_find_list_the]
+    assert check_list_no_the == check_list_the
