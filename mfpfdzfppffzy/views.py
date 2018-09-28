@@ -48,7 +48,7 @@ class ViewSettings():
         or not.
         """
         if self.dynamic_headers == DYNAMIC_HEADERS:
-            self.header_str = self.cmd[-1].capitalize()
+            self.header_str = self.cmd[-1]
         elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
             self.header_str = get_formatted_output_line(
                 *[x.capitalize() for x in args])

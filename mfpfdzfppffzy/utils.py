@@ -1,7 +1,8 @@
 import re
 
 PROG_NAME = 'MPD'
-MFP_BIND_RE = re.compile(r'^mfp\((.*)\)$', flags=re.DOTALL)
+MFP_KB_RE = re.compile(r'^mfp\((.*)\)$', flags=re.DOTALL)
+MFP_BIND_RE = re.compile(r'(?:^|,)([^:]+):(mfp\([^\)]*\))')
 
 
 class KeyBindings(dict):
@@ -10,29 +11,24 @@ class KeyBindings(dict):
     keybinding syntax.
     """
 
-    def __init__(self, fifo):
+    def __init__(self, args, fifo=None):
+        # base_args is an initial bind argument that can be passed as is to fzf
         self.fifo = fifo
         self.custom_dict = {}
         self.cmd_temp = 'echo {} {{}} > ' + self.fifo
         self.exec_temp = 'execute#{}#'
+        self.base_args = self.parse_bind_args(args)
         super().__init__()
 
-    def __setitem__(self, key, value):
-        """Adapt keybinds if they are wrapped in mfp()."""
-        # do nothing if this is an empty key or empty command
-        if not value.replace('&&', '').strip() or not key.strip():
-            return
-
-        match = MFP_BIND_RE.match(value)
-        if match:
-            mfp_cmd = match.group(1)
-
-            if '&&' in mfp_cmd:
-                value = self.get_multi_cmd(mfp_cmd)
-            else:
-                value = self.cmd_temp.format(mfp_cmd)
-
-        self.custom_dict[key] = self.exec_temp.format(value)
+    def parse_bind_args(self, args):
+        """
+        Parse provided args to the bind command and populate the dict with mfp
+        specific commands. Return the rest of the string which can be directly
+        passed to fzf.
+        """
+        for m in MFP_BIND_RE.finditer(args):
+            self[m.group(1)] = m.group(2)
+        return MFP_BIND_RE.sub('', args)
 
     def get_multi_cmd(self, s):
         """
@@ -46,12 +42,29 @@ class KeyBindings(dict):
     def items(self):
         return self.custom_dict.items()
 
+    def __setitem__(self, key, value):
+        """Adapt keybinds if they are wrapped in mfp()."""
+        # do nothing if this is an empty key or empty command
+        if not value.replace('&&', '').strip() or not key.strip():
+            return
+
+        match = MFP_KB_RE.match(value)
+        if match:
+            mfp_cmd = match.group(1)
+
+            if '&&' in mfp_cmd:
+                value = self.get_multi_cmd(mfp_cmd)
+            else:
+                value = self.cmd_temp.format(mfp_cmd)
+
+        self.custom_dict[key] = self.exec_temp.format(value)
+
     def __getitem__(self, key):
         return self.custom_dict[key]
 
     def __str__(self):
         pairs = (':'.join(t) for t in self.items())
-        return '--bind={}'.format(','.join(pairs))
+        return '--bind={},{}'.format(self.base_args, ','.join(pairs))
 
 
 def coroutine(f):
