@@ -68,7 +68,7 @@ class ConnectClient(mpd.MPDClient):
         self.addr = addr
         self.port = port
         self.view = None                # these are for communication
-        self.fifo = self._get_fifo()  # with fzf
+        self.fifo = self._get_fifo()    # with fzf
         self.fifo_thread = None
         super().__init__()
 

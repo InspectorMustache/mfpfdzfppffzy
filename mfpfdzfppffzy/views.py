@@ -7,7 +7,7 @@ import shutil
 from copy import deepcopy
 from .utils import coroutine
 
-FZF_PROG_OPTS = ('-m', '--height=100%', '--inline-info')
+FZF_PROG_OPTS = ('-m', '--height=100%', '--inline-info', '--no-sort')
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
 ARTIST_PREFIX_MATCHER = re.compile(r'^the (.+)', flags=re.IGNORECASE)
 
@@ -262,7 +262,7 @@ def create_plain_view(items, view_settings):
     key_func = make_sort_function(sort_field=view_settings.sort_field,
                                   the_sort=view_settings.the_sort)
     items.sort(key=key_func)
-    create_view(items, *view_settings.header)
+    create_view(items, view_settings)
 
 
 def create_view_with_custom_entries(items, entry_func, view_settings,
@@ -273,20 +273,11 @@ def create_view_with_custom_entries(items, entry_func, view_settings,
     track dict whose entry was selected.
     """
     add_entries_to_list(items, entry_func, entry_func_args)
-    entries = [x['fzf_string'] for x in items]
     key_func = make_sort_function(sort_field=view_settings.sort_field,
                                   the_sort=view_settings.the_sort)
-    entries.sort(key=key_func)
-    sel = create_view(entries, *view_settings.header)
-
-    # pull selected dict out of list; return None if nothing was selected
-    # TODO: this probably isn't needed here, for stdout it should be enough if
-    # the selection is echoed
-    try:
-        sel = next(filter(lambda x: x['fzf_string'] == sel, items))
-        return sel
-    except StopIteration:
-        return None
+    items.sort(key=key_func)
+    entries = [x['fzf_string'] for x in items]
+    create_view(entries, view_settings)
 
 
 def make_sort_function(sort_field=None, the_sort=False):
@@ -299,7 +290,7 @@ def make_sort_function(sort_field=None, the_sort=False):
     """
     if not the_sort:
         if sort_field:
-            return lambda x: x[sort_field]
+            return lambda x: x[sort_field].lower()
         else:
             return lambda x: x.lower()
     else:
