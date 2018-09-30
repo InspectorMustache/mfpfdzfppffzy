@@ -23,14 +23,20 @@ class ViewSettings():
     Returns string arguments for command and header in a processible tuple
     form.
     """
-    def __init__(self, cmd, sort_field=None, the_sort=False,
-                 keybinds=None, dynamic_headers=NO_DYNAMIC_HEADERS):
+    def __init__(self, cmd,
+                 sort_field=None,
+                 additional_args=None,
+                 keybinds=None,
+                 the_sort=False,
+                 dynamic_headers=NO_DYNAMIC_HEADERS):
         self.cmd = cmd
         self.the_sort = the_sort  # include/don't include "the" when sorting
         self.sort_field = sort_field
-        self.keybinds = keybinds
+        # create tuple from keybinds so it can be used as subprocess args
+        self.keybinds = tuple(str(keybinds))
         self.dynamic_headers = dynamic_headers
         self.header_str = ''
+        self.additional_args = additional_args or []
 
     @property
     def header(self):
@@ -236,13 +242,15 @@ def pipe_to_fzf(content, *args):
     return stdout, fzf.returncode
 
 
-def create_view(items, *args):
+def create_view(items, view_settings):
     """
     Create a fzf view from items. Additional args are passed to
     fzf. Returns the selected entry or None if selection was cancelled.
     """
     view = '\n'.join(items)
-    sel, returncode = pipe_to_fzf(view, *args)
+    sel, returncode = pipe_to_fzf(view, *view_settings.keybinds,
+                                  *view_settings.header,
+                                  *view_settings.additional_args)
     if returncode == 0:
         return sel.strip('\n')
     else:

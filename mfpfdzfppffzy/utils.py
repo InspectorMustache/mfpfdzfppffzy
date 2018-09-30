@@ -15,9 +15,9 @@ class KeyBindings(dict):
         # base_args is an initial bind argument that can be passed as is to fzf
         self.fifo = fifo
         self.custom_dict = {}
-        self.cmd_temp = 'echo {} {{}} > ' + self.fifo
+        self.cmd_temp = 'echo {} > ' + self.fifo
         self.exec_temp = 'execute#{}#'
-        self.base_args = self.parse_bind_args(args)
+        self.base_args = self.parse_bind_args(args) if args else None
         super().__init__()
 
     def parse_bind_args(self, args):
@@ -39,12 +39,9 @@ class KeyBindings(dict):
         cmds = map(lambda x: self.cmd_temp.format(x), cmds)
         return ' && '.join(cmds)
 
-    def items(self):
-        return self.custom_dict.items()
-
     def __setitem__(self, key, value):
         """Adapt keybinds if they are wrapped in mfp()."""
-        # do nothing if this is an empty key or empty command
+        # do nothing if this is an empty key/command
         if not value.replace('&&', '').strip() or not key.strip():
             return
 
@@ -63,8 +60,14 @@ class KeyBindings(dict):
         return self.custom_dict[key]
 
     def __str__(self):
-        pairs = (':'.join(t) for t in self.items())
-        return '--bind={},{}'.format(self.base_args, ','.join(pairs))
+        pairs = [':'.join(t) for t in self.custom_dict.items()]
+        if self.base_args:
+            pairs.append(self.base_args)
+
+        if pairs:
+            return '--bind={}'.format(','.join(pairs))
+        else:
+            return ''
 
 
 def coroutine(f):

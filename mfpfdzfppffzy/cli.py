@@ -1,6 +1,7 @@
 import click
 from . import views
 from .client import ConnectClient
+from .utils import KeyBindings
 
 generic_options_list = [
     click.argument('cmd', nargs=-1, metavar='QUERY', required=True),

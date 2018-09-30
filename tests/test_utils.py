@@ -5,7 +5,7 @@ from hypothesis.strategies import text
 
 def get_kb_str(keybind, mfp_cmd=None, fifo=None):
     """Create a string for testing keybinds from the provided parameters."""
-    return '{}:execute#echo {} {{}} > {}#'.format(keybind, mfp_cmd, fifo)
+    return '{}:execute#echo {} > {}#'.format(keybind, mfp_cmd, fifo)
 
 
 @given(text().filter(lambda x: '&&' not in x),
@@ -15,6 +15,8 @@ def test_key_bindings(mfp_cmd1, mfp_cmd2):
     fifo = '/some/path with a a space/somewhere'
     fzf_bind_args = 'ctrl-a:mfp(y-1),ctrl-b:x-1,ctrl-c:mfp(y-2),ctrl-d:x-2'
     kb = KeyBindings(fzf_bind_args, fifo=fifo)
+    # {} should be addable by the user and not cause any problems
+    mfp_cmd1 += ' {}'
 
     # test keybinds created by initiation
     assert 'ctrl-b:x-1,ctrl-d:x-2' in str(kb)
@@ -32,5 +34,10 @@ def test_key_bindings(mfp_cmd1, mfp_cmd2):
     kb = KeyBindings(fzf_bind_args, fifo=fifo)
     mfp_chained = ' && '.join([mfp_cmd1, mfp_cmd2])
     kb['ctrl-g'] = 'mfp({})'.format(mfp_chained)
-    assert 'ctrl-g:execute#echo {0} {{}} > {2} && echo {1} {{}} > {2}#'.format(
+    assert 'ctrl-g:execute#echo {0} > {2} && echo {1} > {2}#'.format(
         mfp_cmd1.strip(), mfp_cmd2.strip(), fifo) in str(kb)
+
+    # finally assert that str(KeyBindings) will output nothing if there are no
+    # keybindings
+    kb = KeyBindings('', fifo='')
+    assert str(kb) == ''
