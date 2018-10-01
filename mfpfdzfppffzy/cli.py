@@ -12,7 +12,10 @@ generic_options_list = [
     click.option('--bind',
                  help='keybindings in a comma-separated list'),
     click.option('--sort', type=click.Choice(MPD_FIELDS),
-                 help='tag field to sort items by')]
+                 metavar='MPD-TAG',
+                 help='tag field to sort items by'),
+    click.option('--the-strip', is_flag=True,
+                 help='strip leading "The" of the sort field before sorting')]
 
 
 def translate_dynamic_headers(choice):
@@ -42,14 +45,15 @@ def mfpfdzfppffzy():
 
 
 def run_with_args(view_func, cmd, mpd_host=None, mpd_port=None, bind=None,
-                  sort=None, dynamic_headers=None):
+                  sort=None, the_strip=None, dynamic_headers=None):
     """Process arguments and call view_func."""
     mpc = ConnectClient(addr=mpd_host, port=mpd_port)
     mpc._listen_on_fifo()
     dynamic_headers = translate_dynamic_headers(dynamic_headers)
     kb = KeyBindings(bind, fifo=mpc.fifo)
     view_settings = views.ViewSettings(
-        cmd, keybinds=kb, dynamic_headers=dynamic_headers, sort_field=sort)
+        cmd, keybinds=kb, dynamic_headers=dynamic_headers, sort_field=sort,
+        the_strip=the_strip)
 
     view_func(mpc, view_settings)
 
@@ -60,7 +64,7 @@ def run_with_args(view_func, cmd, mpd_host=None, mpd_port=None, bind=None,
     '--dynamic-headers',
     type=click.Choice(['yes', 'no', 'category']),
     help='create headers from the search query or the displayed tag fields')
-def find(cmd, mpd_host, mpd_port, bind, sort, dynamic_headers):
+def find(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
     """
     Display results from mpd's find command in a column based view. Each column
     correspond to the artist, album and title tags.
@@ -72,14 +76,15 @@ def find(cmd, mpd_host, mpd_port, bind, sort, dynamic_headers):
     """
     run_with_args(views.singles_view, cmd,
                   mpd_host=mpd_host, mpd_port=mpd_port, bind=bind,
-                  sort=sort, dynamic_headers=dynamic_headers)
+                  sort=sort, the_strip=the_strip,
+                  dynamic_headers=dynamic_headers)
 
 
 @mfpfdzfppffzy.command(short_help="find and display specific tags")
 @generic_options
 @click.option('--dynamic-headers', type=click.Choice(['yes', 'no']),
               help='create headers from search query')
-def list(cmd, mpd_host, mpd_port, bind, sort, dynamic_headers):
+def list(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
     """
     Display results from mpd's list command in a simple index view.
 
@@ -90,7 +95,8 @@ def list(cmd, mpd_host, mpd_port, bind, sort, dynamic_headers):
     """
     run_with_args(views.container_view, cmd,
                   mpd_host=mpd_host, mpd_port=mpd_port, bind=bind,
-                  sort=sort, dynamic_headers=dynamic_headers)
+                  sort=sort, the_strip=the_strip,
+                  dynamic_headers=dynamic_headers)
 
 
 if __name__ == '__main__':

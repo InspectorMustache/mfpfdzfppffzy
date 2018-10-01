@@ -27,12 +27,12 @@ class ViewSettings():
                  out_type=dict,  # list of what type to expect from mpd
                  sort_field=None,
                  dynamic_headers=NO_DYNAMIC_HEADERS,
-                 the_sort=False,
+                 the_strip=False,
                  additional_args=None,
                  keybinds=None):
         self.cmd = cmd
         self.out_type = out_type
-        self.the_sort = the_sort  # include/don't include "the" when sorting
+        self.the_strip = the_strip  # include/don't include "the" when sorting
         self.sort_field = sort_field
         # create tuple from keybinds so it can be used as subprocess args
         self.keybinds = tuple(str(keybinds))
@@ -54,7 +54,7 @@ class ViewSettings():
     def sort_func(self):
         """Create and return sort key function from sort_field."""
         if self.out_type == dict:
-            if self.the_sort:
+            if self.the_strip:
                 def key_sort(x):
                     mo = ARTIST_PREFIX_MATCHER.match(x[self.sort_field])
                     if mo:
@@ -65,7 +65,7 @@ class ViewSettings():
                 def key_sort(x):
                     return x[self.sort_field].lower()
         elif self.out_type == str:
-            if self.the_sort:
+            if self.the_strip:
                 def key_sort(x):
                     mo = ARTIST_PREFIX_MATCHER.match(x)
                     return mo.group(1).lower() if mo else x.lower()
