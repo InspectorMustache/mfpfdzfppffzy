@@ -1,6 +1,14 @@
 import re
 
+# general program constants
 PROG_NAME = 'MPD'
+MPD_FIELDS = ('artist', 'artistsort', 'album', 'albumsort', 'albumartist',
+              'albumartistsort', 'title', 'track', 'name', 'genre', 'date',
+              'composer', 'performer', 'comment', 'disc',
+              'musicbrainz_artistid', 'musicbrainz_albumid',
+              'musicbrainz_albumartistid', 'musicbrainz_trackid',
+              'musicbrainz_releasetrackid', 'musicbrainz_workid')
+
 MFP_KB_RE = re.compile(r'^mfp\((.*)\)$', flags=re.DOTALL)
 MFP_BIND_RE = re.compile(r'(?:^|,)([^:]+):(mfp\([^\)]*\))')
 

@@ -1,7 +1,7 @@
 import click
 from . import views
 from .client import ConnectClient
-from .utils import KeyBindings
+from .utils import KeyBindings, MPD_FIELDS
 
 generic_options_list = [
     click.argument('cmd', nargs=-1, metavar='QUERY', required=True),
@@ -11,7 +11,7 @@ generic_options_list = [
                  help='port address of a remote or local mpd server'),
     click.option('--bind',
                  help='keybindings in a comma-separated list'),
-    click.option('--sort',
+    click.option('--sort', type=click.Choice(MPD_FIELDS),
                  help='tag field to sort items by')]
 
 
@@ -70,7 +70,6 @@ def find(cmd, mpd_host, mpd_port, bind, sort, dynamic_headers):
     mfpfdzfppffzy find artist 'Jeff Rosenstock'
     mfpfdzfppffzy find artist 'Glocca Morra' album 'Just Married'
     """
-    sort = sort or 'artist'
     run_with_args(views.singles_view, cmd,
                   mpd_host=mpd_host, mpd_port=mpd_port, bind=bind,
                   sort=sort, dynamic_headers=dynamic_headers)

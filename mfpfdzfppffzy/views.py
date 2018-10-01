@@ -24,12 +24,14 @@ class ViewSettings():
     form.
     """
     def __init__(self, cmd,
-                 sort_field=None,
-                 additional_args=None,
-                 keybinds=None,
+                 out_type=dict,  # list of what type to expect from mpd
+                 sort_field='artist',
+                 dynamic_headers=NO_DYNAMIC_HEADERS,
                  the_sort=False,
-                 dynamic_headers=NO_DYNAMIC_HEADERS):
+                 additional_args=None,
+                 keybinds=None):
         self.cmd = cmd
+        self.out_type = out_type
         self.the_sort = the_sort  # include/don't include "the" when sorting
         self.sort_field = sort_field
         # create tuple from keybinds so it can be used as subprocess args
@@ -47,6 +49,35 @@ class ViewSettings():
     def header(self, value):
         """Pass str input for header to self.header_str."""
         self.header_str = value
+
+    @property
+    def sort_func(self):
+        """Create and return sort key function from sort_field."""
+        if self.out_type == dict:
+            if self.the_sort:
+                def key_sort(x):
+                    mo = ARTIST_PREFIX_MATCHER.match(x[self.sort_field])
+                    if mo:
+                        return mo.group(1).lower()
+                    else:
+                        return x[self.sort_field].lower()
+            else:
+                def key_sort(x):
+                    return x[self.sort_field].lower()
+        elif self.out_type == str:
+            if self.the_sort:
+                def key_sort(x):
+                    mo = ARTIST_PREFIX_MATCHER.match(x)
+                    return mo.group(1).lower() if mo else x.lower()
+            else:
+                def key_sort(x):
+                    return x.lower()
+        else:
+            # this should never happen
+            def my_func(x):
+                return x
+
+        return key_sort
 
     def update_headers(self, *args):
         """
@@ -259,9 +290,7 @@ def create_view(items, view_settings):
 
 def create_plain_view(items, view_settings):
     """Create a view from str_list with sorting it first."""
-    key_func = make_sort_function(sort_field=view_settings.sort_field,
-                                  the_sort=view_settings.the_sort)
-    items.sort(key=key_func)
+    items.sort(key=view_settings.sort_func)
     create_view(items, view_settings)
 
 
@@ -273,36 +302,9 @@ def create_view_with_custom_entries(items, entry_func, view_settings,
     track dict whose entry was selected.
     """
     add_entries_to_list(items, entry_func, entry_func_args)
-    key_func = make_sort_function(sort_field=view_settings.sort_field,
-                                  the_sort=view_settings.the_sort)
-    items.sort(key=key_func)
+    items.sort(key=view_settings.sort_func)
     entries = [x['fzf_string'] for x in items]
     create_view(entries, view_settings)
-
-
-def make_sort_function(sort_field=None, the_sort=False):
-    """
-    Make a sort key function. If sort_field is provided, the structure to be
-    sorted is assumed to be a find dict and sort_field will be used for
-    sorting. Otherwise the structure is assumed to be a simple list of
-    strings. the_sort controls whether or not a prepending 'The' is ignored or
-    not.
-    """
-    if not the_sort:
-        if sort_field:
-            return lambda x: x[sort_field].lower()
-        else:
-            return lambda x: x.lower()
-    else:
-        if sort_field:
-            def key_sort(x):
-                mo = ARTIST_PREFIX_MATCHER.match(x[sort_field])
-                return mo.group(1).lower() if mo else x[sort_field].lower()
-        else:
-            def key_sort(x):
-                mo = ARTIST_PREFIX_MATCHER.match(x)
-                return mo.group(1).lower() if mo else x.lower()
-        return key_sort
 
 
 def lax_int(x):
@@ -322,6 +324,7 @@ def container_view(mpc, view_settings):
     """
     entries = mpc.list(*view_settings.cmd)
     view_settings.update_headers()
+    view_settings.out_type = str
     return create_plain_view(entries, view_settings)
 
 
@@ -332,7 +335,8 @@ def track_view(mpc, view_settings):
     Optionally specify sorting with sort_field and a header for fzf.
     Return the selection.
     """
-    tracks = mpc.find(*view_settings.cmd, required_tags=['track', 'title'])
+    required_tags = ('track', 'title', view_settings.sort_field)
+    tracks = mpc.find(*view_settings.cmd, required_tags=required_tags)
     view_settings.update_headers()
     return create_view_with_custom_entries(
         tracks, get_track_output_line, view_settings)
@@ -343,7 +347,8 @@ def singles_view(mpc, view_settings):
     Use args as commands to the MPD Client and build a track-based view.
     """
     tags = ('artist', 'album', 'title')
-    singles = mpc.find(*view_settings.cmd, required_tags=tags)
+    required_tags = (*tags, view_settings.sort_field)
+    singles = mpc.find(*view_settings.cmd, required_tags=required_tags)
     view_settings.update_headers(*tags)
     return create_view_with_custom_entries(
         singles, get_tag_output_line, view_settings,
