@@ -15,7 +15,7 @@ except ValueError:
 MPD_HOST = os.getenv('MPD_HOST', default="127.0.0.1")
 
 
-def ensure_connect(f):
+def always_connect(instance, f):
     """
     Decorator that makes sure there is a connection to mpd before running f.
     """
@@ -31,35 +31,13 @@ def ensure_connect(f):
                 if timeout > 5:
                     raise e
                 else:
-                    args[0].connect()
+                    instance.connect()
                     timeout += 1
         return v
 
     return wrapped
 
 
-def always_connect(c):
-    """Class decorator to deocrate all relevant methods in c with
-    ensure_connection."""
-    exclude = ['ping', 'connect', 'close', 'mfp_run_command']
-
-    def filter_func(x):
-        """
-        Return True for attributes that should be decorated. This includes
-        non-dunder methods that are not in exclude.
-        """
-        return all((x not in exclude,
-                    not x.startswith('_'),
-                    callable(getattr(c, x))))
-
-    for method_name in filter(filter_func, dir(c)):
-        method = getattr(c, method_name)
-        setattr(c, method_name, ensure_connect(method))
-
-    return c
-
-
-@always_connect
 class ConnectClient(mpd.MPDClient):
     """Derived MPDClient with some helper methods added."""
 
@@ -71,6 +49,8 @@ class ConnectClient(mpd.MPDClient):
         self.fifo = self._get_fifo()    # with fzf
         self.fifo_thread = None
         super().__init__()
+        self.exclude_connect = ['ping', 'connect', 'close', 'mfp_run_command']
+        self.ensure_connect()
 
     def _get_fifo(self):
         """Create fifo in temp directory."""
@@ -112,6 +92,20 @@ class ConnectClient(mpd.MPDClient):
         for tag in filter(lambda x: x not in title.keys(), self.required_tags):
             title[tag] = ''
         return title
+
+    def ensure_connect(self):
+        """
+        Wrap all functions that aren't in exclude and don't start with _ in the
+        always_connect (pseudo-)decorator.
+        """
+        def filter_func(x):
+            return all((x not in self.exclude_connect,
+                        not x.startswith('_'),
+                        callable(getattr(self, x))))
+
+        for method_name in filter(filter_func, dir(self)):
+            method = getattr(self, method_name)
+            setattr(self, method_name, always_connect(self, method))
 
     def connect(self, *args, **kwargs):
         """Connect to mpd by using class fields."""
