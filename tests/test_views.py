@@ -181,14 +181,14 @@ def test_filter_view(library):
 @given(st.lists(elements=st.fixed_dictionaries((MPD_FIND_RETURN_DICT))))
 def test_sorting(find_list):
     list_list = [x['artist'] for x in find_list]
+    vs = views.ViewSettings('', sort_field='artist')
 
     # sort list of find dicts
-    key_func = views.make_sort_function(sort_field='artist')
-    sorted_find_list = sorted(find_list, key=key_func)
+    sorted_find_list = sorted(find_list, key=vs.sort_func)
 
     # sort list of list entries
-    key_func = views.make_sort_function()
-    sorted_list_list = sorted(list_list, key=key_func)
+    vs.out_type = str
+    sorted_list_list = sorted(list_list, key=vs.sort_func)
     check_list = [x['artist'] for x in sorted_find_list]
     assert check_list == sorted_list_list
 
@@ -196,8 +196,9 @@ def test_sorting(find_list):
     for d in find_list:
         d['artist'] = 'The {}'.format(d['artist'])
 
-    key_func = views.make_sort_function(sort_field='artist', the_sort=True)
-    sorted_find_list_the = sorted(find_list, key=key_func)
+    vs.the_sort = True
+    vs.out_type = dict
+    sorted_find_list_the = sorted(find_list, key=vs.sort_func)
     check_list_no_the = [x['time'] for x in sorted_find_list]
     check_list_the = [x['time'] for x in sorted_find_list_the]
     assert check_list_no_the == check_list_the

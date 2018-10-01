@@ -25,7 +25,7 @@ class ViewSettings():
     """
     def __init__(self, cmd,
                  out_type=dict,  # list of what type to expect from mpd
-                 sort_field='artist',
+                 sort_field=None,
                  dynamic_headers=NO_DYNAMIC_HEADERS,
                  the_sort=False,
                  additional_args=None,
@@ -289,8 +289,9 @@ def create_view(items, view_settings):
 
 
 def create_plain_view(items, view_settings):
-    """Create a view from str_list with sorting it first."""
-    items.sort(key=view_settings.sort_func)
+    """Create a view from items with sorting it first."""
+    if view_settings.sort_field:
+        items.sort(key=view_settings.sort_func)
     create_view(items, view_settings)
 
 
@@ -302,7 +303,9 @@ def create_view_with_custom_entries(items, entry_func, view_settings,
     track dict whose entry was selected.
     """
     add_entries_to_list(items, entry_func, entry_func_args)
-    items.sort(key=view_settings.sort_func)
+    if view_settings.sort_field:
+        items.sort(key=view_settings.sort_func)
+
     entries = [x['fzf_string'] for x in items]
     create_view(entries, view_settings)
 
