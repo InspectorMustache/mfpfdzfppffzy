@@ -143,7 +143,6 @@ class FilterView():
         if self.state < self.final_state - 1:
             self.sel = container_view(self.mpc, view)
         else:
-            # TODO: Exception handling here
             self.sel = getattr(
                 sys.modules[__name__], self.final_view)(self.mpc, view)
 
@@ -252,14 +251,13 @@ def adapt_find_duplicates(find_list):
     """Make sure the fzf_string key of each item in find_list is unique by
     appending NUL."""
 
-    while True:
-        fzf_strs = [x['fzf_string'] for x in find_list]
-        dups = filter(lambda x: fzf_strs.count(x['fzf_string']) > 1, find_list)
-        try:
-            d = next(dups)
-            d['fzf_string'] += '\u0000'
-        except StopIteration:
-            break
+    fzf_strs = [x['fzf_string'] for x in find_list]
+    dup_strs = {x for x in fzf_strs if fzf_strs.count(x) > 1}
+
+    for dstr in dup_strs:
+        dups = filter(lambda x: x['fzf_string'] == dstr, find_list)
+        for i, d in enumerate(dups):
+            d['fzf_string'] += '\x0000' * i
 
 
 def pipe_to_fzf(content, *args):
@@ -313,16 +311,6 @@ def create_view_with_custom_entries(items, entry_func, view_settings,
 
     entries = [x['fzf_string'] for x in items]
     create_view(entries, view_settings)
-
-
-def lax_int(x):
-    """
-    Try integer conversion or just return 0.
-    """
-    try:
-        return int(x)
-    except ValueError:
-        return 0
 
 
 def container_view(mpc, view_settings):
