@@ -5,7 +5,7 @@ import shlex
 import re
 import shutil
 from copy import deepcopy
-from .utils import coroutine
+from .utils import UserError, lax_int, coroutine
 
 FZF_PROG_OPTS = ('-m', '--height=100%', '--inline-info', '--no-sort')
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
@@ -269,7 +269,12 @@ def pipe_to_fzf(content, *args):
                            encoding='utf-8')
 
     # TODO: exception handling
-    stdout, stderr = fzf.communicate(input=content)
+    try:
+        stdout, stderr = fzf.communicate(input=content)
+    except FileNotFoundError as exc:
+        raise UserError(
+            'Executable {} not found in PATH.'.format(exc.filename))
+
     return stdout, fzf.returncode
 
 

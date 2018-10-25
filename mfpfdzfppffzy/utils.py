@@ -13,6 +13,13 @@ MFP_KB_RE = re.compile(r'^mfp\((.*)\)$', flags=re.DOTALL)
 MFP_BIND_RE = re.compile(r'(?:^|,)([^:]+):(mfp\([^\)]*\))')
 
 
+class UserError(BaseException):
+    """
+    Raise in place of ohter exceptions for errors expectable from user input.
+    """
+    pass
+
+
 class KeyBindings(dict):
     """
     Subclass of a dict whose string representation conforms to fzf's
@@ -76,6 +83,16 @@ class KeyBindings(dict):
             return '--bind={}'.format(','.join(pairs))
         else:
             return ''
+
+
+def lax_int(x):
+    """
+    Try integer conversion or just return 0.
+    """
+    try:
+        return int(x)
+    except ValueError:
+        return 0
 
 
 def coroutine(f):
