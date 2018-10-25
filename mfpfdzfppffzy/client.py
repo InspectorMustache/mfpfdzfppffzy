@@ -49,7 +49,6 @@ class ConnectClient(mpd.MPDClient):
         self.fifo = self._get_fifo()    # with fzf
         self.fifo_thread = None
         super().__init__()
-        self.exclude_connect = ['ping', 'connect', 'close', 'mfp_run_command']
         self.ensure_connect()
 
     def _get_fifo(self):
@@ -95,15 +94,14 @@ class ConnectClient(mpd.MPDClient):
 
     def ensure_connect(self):
         """
-        Wrap all functions that aren't in exclude and don't start with _ in the
-        always_connect (pseudo-)decorator.
+        Wrap all mpd commands with the always_connect (pseudo-)decorator.
         """
-        def filter_func(x):
-            return all((x not in self.exclude_connect,
-                        not x.startswith('_'),
-                        callable(getattr(self, x))))
+        # make initial connection for using the commands method
+        self.connect()
 
-        for method_name in filter(filter_func, dir(self)):
+        # filter out unavailable commands returned by commands(); I think this
+        # is a bug with the mpd2 library
+        for method_name in filter(lambda x: x in dir(self), self.commands()):
             method = getattr(self, method_name)
             setattr(self, method_name, always_connect(self, method))
 
@@ -123,9 +121,8 @@ class ConnectClient(mpd.MPDClient):
 
     def mfp_run_command(self, cmd_str):
         """
-        Take in string cmd and parse it as an mpd command. (mfp stands for
-        our application name here).
-        Returns True if succesful, otherwise returns a string that can be
+        Take in string cmd and parse it as an mpd command.
+        Returns True if successful, otherwise returns a string that can be
         returned to the caller - this is supposed to be an interactive command.
         """
         cmd_list = shlex.split(cmd_str)
