@@ -15,7 +15,7 @@ MFP_BIND_RE = re.compile(r'(?:^|,)([^:]+):(mfp\([^\)]*\))')
 
 class UserError(BaseException):
     """
-    Raise in place of ohter exceptions for errors expectable from user input.
+    Raise in place of other exceptions for errors expectable from user input.
     """
     pass
 

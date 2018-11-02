@@ -5,6 +5,7 @@ import atexit
 import mpd
 from threading import Thread
 from functools import wraps
+from .utils import UserError
 
 try:
     MPD_PORT = int(os.getenv("MPD_PORT", default=6600))
@@ -107,7 +108,10 @@ class ConnectClient(mpd.MPDClient):
 
     def connect(self, *args, **kwargs):
         """Connect to mpd by using class fields."""
-        super().connect(self.addr, *args, port=self.port, **kwargs)
+        try:
+            super().connect(self.addr, *args, port=self.port, **kwargs)
+        except ConnectionRefusedError:
+            raise UserError("Unable to establish connection to MPD server.")
 
     def find(self, *args, **kwargs):
         # make sure we get all the tags we need so we don't get a key error
