@@ -39,6 +39,23 @@ def always_connect(instance, f):
     return wrapped
 
 
+def catch_command_error(f):
+    """Decorator that catches CommandErrors and reraises them as UserErrors."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except mpd.CommandError as e:
+            raise UserError('The MPD server returned: {}'.format(str(e)))
+
+    return wrapped
+
+
+def decorate_command(instance, f):
+    """Return cmd decorated with always_connect and catch_command_error."""
+    return always_connect(instance, catch_command_error(f))
+
+
 class ConnectClient(mpd.MPDClient):
     """Derived MPDClient with some helper methods added."""
 
@@ -95,7 +112,7 @@ class ConnectClient(mpd.MPDClient):
 
     def ensure_connect(self):
         """
-        Wrap all mpd commands with the always_connect (pseudo-)decorator.
+        Wrap all mpd commands with the decorate_command (pseudo-)decorator.
         """
         # make initial connection for using the commands method
         self.connect()
@@ -104,7 +121,7 @@ class ConnectClient(mpd.MPDClient):
         # is a bug with the mpd2 library
         for method_name in filter(lambda x: x in dir(self), self.commands()):
             method = getattr(self, method_name)
-            setattr(self, method_name, always_connect(self, method))
+            setattr(self, method_name, decorate_command(self, method))
 
     def connect(self, *args, **kwargs):
         """Connect to mpd by using class fields."""
