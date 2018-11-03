@@ -1,47 +1,52 @@
-import click
+import os
+import sys
+import argparse
 from . import views
 from .client import ConnectClient
-from .utils import KeyBindings, MPD_FIELDS
+from .utils import KeyBindings, UserError, MPD_FIELDS
 
-generic_options_list = [
-    click.argument('cmd', nargs=-1, metavar='QUERY', required=True),
-    click.option('--mpd-host', envvar='MPD_HOST', default='127.0.0.1',
-                 help='address of a remote or local mpd server'),
-    click.option('--mpd-port', envvar='MPD_PORT', default=6600,
-                 help='port address of a remote or local mpd server'),
-    click.option('--bind',
-                 help='keybindings in a comma-separated list'),
-    click.option('--sort', type=click.Choice(MPD_FIELDS),
-                 metavar='MPD-TAG',
-                 help='tag field to sort items by'),
-    click.option('--the-strip', is_flag=True,
-                 help='strip leading "The" of the sort field before sorting')]
+MFP_CUSTOM_CMDS = ('find', 'list')
 
 
-def translate_dynamic_headers(choice):
+class DynamicHeadersAction(argparse.Action):
+    """Translate dynamic-headers selection into appropriate constant."""
+    def __init__(self, *args, **kwargs):
+        self.choice_dict = {
+            'yes': views.DYNAMIC_HEADERS,
+            'category': views.CAT_DYNAMIC_HEADERS,
+            'no': views.NO_DYNAMIC_HEADERS}
+        super().__init__(*args, **kwargs)
+
+    def __call__(self, parser, namespace, value, *args, **kwargs):
+        setattr(namespace, self.dest, self.choice_dict[value])
+
+
+argparser = argparse.ArgumentParser()
+argparser.add_argument('command', nargs='+')
+argparser.add_argument('--mpd-host',
+                       default=os.getenv('MPD_HOST') or '127.0.0.1',
+                       help='address of a remote or local mpd server')
+argparser.add_argument('--mpd-port',
+                       type=int,
+                       default=os.getenv('MPD_PORT') or '6600',
+                       help='port address of a remote or local mpd server')
+argparser.add_argument('--bind', help='keybindings in a comma-separated list')
+argparser.add_argument('--sort', choices=MPD_FIELDS, metavar='MPD-TAG',
+                       help='tag field to sort items by')
+argparser.add_argument(
+    '--the-strip', action='store_true',
+    help='strip leading "The" of the sort field before sorting')
+argparser.add_argument(
+    '--dynamic-headers', choices=['yes', 'no', 'category'],
+    default=views.NO_DYNAMIC_HEADERS, action=DynamicHeadersAction,
+    help='create headers from the search query or the displayed tag fields')
+
+
+def cat_str(cat, msg):
     """
-    Translate choice from the dynamic_headers argument to a value that can be
-    passed as the dynamic_headers argument of a ViewSettings object.
+    Return ansi-term string where cat precedes msg and is printed in bold.
     """
-    if choice == 'yes':
-        return views.DYNAMIC_HEADERS
-    elif choice == 'category':
-        return views.CAT_DYNAMIC_HEADERS
-    else:
-        return views.NO_DYNAMIC_HEADERS
-
-
-def generic_options(func):
-    """Bundle some click options into a single decorator."""
-    for option in reversed(generic_options_list):
-        func = option(func)
-    return func
-
-
-@click.group()
-def mfpfdzfppffzy():
-    """Browse the mpd library with fzf."""
-    pass
+    return '\033[1m{}\033[0m:\n{}'.format(cat, msg)
 
 
 def run_with_args(view_func, cmd, mpd_host=None, mpd_port=None, bind=None,
@@ -49,7 +54,6 @@ def run_with_args(view_func, cmd, mpd_host=None, mpd_port=None, bind=None,
     """Process arguments and call view_func."""
     mpc = ConnectClient(addr=mpd_host, port=mpd_port)
     mpc._listen_on_fifo()
-    dynamic_headers = translate_dynamic_headers(dynamic_headers)
     kb = KeyBindings(bind, fifo=mpc.fifo)
     view_settings = views.ViewSettings(
         cmd, keybinds=kb, dynamic_headers=dynamic_headers, sort_field=sort,
@@ -58,12 +62,6 @@ def run_with_args(view_func, cmd, mpd_host=None, mpd_port=None, bind=None,
     view_func(mpc, view_settings)
 
 
-@mfpfdzfppffzy.command(short_help="find and display single tracks")
-@generic_options
-@click.option(
-    '--dynamic-headers',
-    type=click.Choice(['yes', 'no', 'category']),
-    help='create headers from the search query or the displayed tag fields')
 def find(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
     """
     Display results from mpd's find command in a column based view. Each column
@@ -80,10 +78,6 @@ def find(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
                   dynamic_headers=dynamic_headers)
 
 
-@mfpfdzfppffzy.command(short_help="find and display specific tags")
-@generic_options
-@click.option('--dynamic-headers', type=click.Choice(['yes', 'no']),
-              help='create headers from search query')
 def list(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
     """
     Display results from mpd's list command in a simple index view.
@@ -99,5 +93,25 @@ def list(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
                   dynamic_headers=dynamic_headers)
 
 
+def parse_unregistered_command(ctx):
+    """
+    Try parsing a command that isn't registered as a click command as a regular
+    mpd command by utilizing the commands click context.
+    """
+    raise NotImplementedError
+
+
+def process_cli_args(cli_args):
+    """Run application based on information gathered from the commandline."""
+    try:
+        raise NotImplementedError
+    except UserError as e:
+        print(cat_str('Error', str(e)))
+        sys.exit(1)
+
+
 if __name__ == '__main__':
-    mfpfdzfppffzy()
+    try:
+        process_cli_args(argparser.parse_args())
+    except KeyboardInterrupt:
+        sys.exit(1)

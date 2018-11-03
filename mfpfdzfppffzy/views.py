@@ -89,6 +89,10 @@ class ViewSettings():
         elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
             self.header_str = get_formatted_output_line(
                 *[x.capitalize() for x in args])
+        else:
+            # if CAT_DYNAMIC_HEADERS were requested but there are no args to
+            # build them from, do nothing
+            pass
 
 
 class FilterView():
