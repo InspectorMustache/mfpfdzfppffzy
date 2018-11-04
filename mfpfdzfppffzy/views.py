@@ -297,7 +297,7 @@ def create_view(items, view_settings):
 
 def create_plain_view(items, view_settings):
     """Create a view from items with sorting it first."""
-    if view_settings.sort_field:
+    if view_settings.sort_field or view_settings.the_strip:
         items.sort(key=view_settings.sort_func)
     create_view(items, view_settings)
 
