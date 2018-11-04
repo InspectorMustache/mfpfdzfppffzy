@@ -67,7 +67,7 @@ def run_with_args(mpc, view_func, cli_args):
     view_func(mpc, view_settings)
 
 
-def find_dict_to_str(find_list):
+def find_list_to_str(find_list):
     """Create a string representation list of a find_list."""
     str_list = []
     for d in (x.items() for x in find_list):
@@ -76,11 +76,18 @@ def find_dict_to_str(find_list):
     return str_list
 
 
+def find_dict_to_str(find_dict):
+    """Create a string representation list of a find_dict."""
+    return [':\n'.join(x) for x in find_dict.items()]
+
+
 def print_mpd_return(mpd_return):
     """Handle and print the return value of an mpd command."""
     try:
-        if type(mpd_return[0]) is dict:
+        if type(mpd_return) is dict:
             mpd_return = find_dict_to_str(mpd_return)
+        elif type(mpd_return[0]) is dict:
+            mpd_return = find_list_to_str(mpd_return)
 
         mpd_return = '\n'.join(mpd_return)
     except TypeError:
