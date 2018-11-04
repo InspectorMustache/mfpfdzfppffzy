@@ -5,7 +5,10 @@ from . import views
 from .client import ConnectClient
 from .utils import KeyBindings, UserError, MPD_FIELDS
 
-MFP_CUSTOM_CMDS = ('find', 'list')
+# commands that are specified by mfpfdzfppffzy and the view functions they are
+# associated with
+mfp_custom_cmds = {'find': views.singles_view,
+                   'list': views.container_view}
 
 
 class DynamicHeadersAction(argparse.Action):
@@ -22,7 +25,8 @@ class DynamicHeadersAction(argparse.Action):
 
 
 argparser = argparse.ArgumentParser()
-argparser.add_argument('command', nargs='+')
+argparser.add_argument('command', nargs='+', metavar='CMD',
+                       help='an mpd command')
 argparser.add_argument('--mpd-host',
                        default=os.getenv('MPD_HOST') or '127.0.0.1',
                        help='address of a remote or local mpd server')
@@ -30,6 +34,8 @@ argparser.add_argument('--mpd-port',
                        type=int,
                        default=os.getenv('MPD_PORT') or '6600',
                        help='port address of a remote or local mpd server')
+argparser.add_argument('--bare', action='store_true',
+                       help='simply pass command to mpd and return the result')
 argparser.add_argument('--bind', help='keybindings in a comma-separated list')
 argparser.add_argument('--sort', choices=MPD_FIELDS, metavar='MPD-TAG',
                        help='tag field to sort items by')
@@ -49,69 +55,58 @@ def cat_str(cat, msg):
     return '\033[1m{}\033[0m:\n{}'.format(cat, msg)
 
 
-def run_with_args(view_func, cmd, mpd_host=None, mpd_port=None, bind=None,
-                  sort=None, the_strip=None, dynamic_headers=None):
-    """Process arguments and call view_func."""
-    mpc = ConnectClient(addr=mpd_host, port=mpd_port)
+def run_with_args(mpc, view_func, cli_args):
+    """Run view_func with the processed cli_args."""
     mpc._listen_on_fifo()
-    kb = KeyBindings(bind, fifo=mpc.fifo)
+    kb = KeyBindings(cli_args.bind, fifo=mpc.fifo)
     view_settings = views.ViewSettings(
-        cmd, keybinds=kb, dynamic_headers=dynamic_headers, sort_field=sort,
-        the_strip=the_strip)
+        cli_args.command[1:], keybinds=kb,
+        dynamic_headers=cli_args.dynamic_headers,
+        sort_field=cli_args.sort, the_strip=cli_args.the_strip)
 
     view_func(mpc, view_settings)
 
 
-def find(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
-    """
-    Display results from mpd's find command in a column based view. Each column
-    correspond to the artist, album and title tags.
+def find_dict_to_str(find_list):
+    """Create a string representation list of a find_list."""
+    str_list = []
+    for d in (x.items() for x in find_list):
+        str_list.extend(':\n'.join(y) for y in d)
 
-    \b
-    Example queries:
-    mfpfdzfppffzy find artist 'Jeff Rosenstock'
-    mfpfdzfppffzy find artist 'Glocca Morra' album 'Just Married'
-    """
-    run_with_args(views.singles_view, cmd,
-                  mpd_host=mpd_host, mpd_port=mpd_port, bind=bind,
-                  sort=sort, the_strip=the_strip,
-                  dynamic_headers=dynamic_headers)
+    return str_list
 
 
-def list(cmd, mpd_host, mpd_port, bind, sort, the_strip, dynamic_headers):
-    """
-    Display results from mpd's list command in a simple index view.
+def print_mpd_return(mpd_return):
+    """Handle and print the return value of an mpd command."""
+    try:
+        if type(mpd_return[0]) is dict:
+            mpd_return = find_dict_to_str(mpd_return)
 
-    \b
-    Example queries:
-    mfpfdzfppffzy list artist
-    mfpfdzfppffzy list album artist Ampere
-    """
-    run_with_args(views.container_view, cmd,
-                  mpd_host=mpd_host, mpd_port=mpd_port, bind=bind,
-                  sort=sort, the_strip=the_strip,
-                  dynamic_headers=dynamic_headers)
+        mpd_return = '\n'.join(mpd_return)
+    except TypeError:
+        pass
 
-
-def parse_unregistered_command(ctx):
-    """
-    Try parsing a command that isn't registered as a click command as a regular
-    mpd command by utilizing the commands click context.
-    """
-    raise NotImplementedError
+    if mpd_return:
+        print(mpd_return)
 
 
 def process_cli_args(cli_args):
     """Run application based on information gathered from the commandline."""
-    try:
-        raise NotImplementedError
-    except UserError as e:
-        print(cat_str('Error', str(e)))
-        sys.exit(1)
+    mpc = ConnectClient(addr=cli_args.mpd_host, port=cli_args.mpd_port)
+    base_cmd = cli_args.command[0]
+
+    if not cli_args.bare and base_cmd in mfp_custom_cmds.keys():
+        run_with_args(mpc, mfp_custom_cmds[base_cmd], cli_args)
+    else:
+        mpd_return = mpc.mfp_run_command(' '.join(cli_args.command))
+        print_mpd_return(mpd_return)
 
 
 if __name__ == '__main__':
     try:
         process_cli_args(argparser.parse_args())
+    except UserError as e:
+        print(cat_str('Error', str(e)))
+        sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(1)

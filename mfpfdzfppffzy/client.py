@@ -99,7 +99,7 @@ class ConnectClient(mpd.MPDClient):
     def _listen_on_fifo(self):
         """
         Run a thread that continuously receivs data from the fifo by calling
-        _receive_from_fifo. Once that function returns, the thread is closed.
+        _receive_from_fifo.
         """
         self.fifo_thread = Thread(target=self._receive_from_fifo, daemon=True)
         self.fifo_thread.start()
@@ -142,14 +142,12 @@ class ConnectClient(mpd.MPDClient):
 
     def mfp_run_command(self, cmd_str):
         """
-        Take in string cmd and parse it as an mpd command.
-        Returns True if successful, otherwise returns a string that can be
-        returned to the caller - this is supposed to be an interactive command.
+        Take in string cmd and parse it as an mpd command. Raise UserError if
+        it's not a valid mpd command.
         """
         cmd_list = shlex.split(cmd_str)
         try:
             cmd = cmd_list.pop(0)
-            getattr(self, cmd)(*cmd_list)
-            return "OK"
-        except (IndexError, AttributeError):
-            return "ERR '{}' is not a valid command.".format(cmd_str)
+            return getattr(self, cmd)(*cmd_list)
+        except AttributeError:
+            raise UserError('"{}" is not a valid mpd command.'.format(cmd_str))
