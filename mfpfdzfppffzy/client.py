@@ -7,14 +7,6 @@ from threading import Thread
 from functools import wraps
 from .utils import UserError
 
-try:
-    MPD_PORT = int(os.getenv("MPD_PORT", default=6600))
-except ValueError:
-    # if MPD_PORT is set to something strange, fall back to 6600
-    MPD_PORT = 6600
-
-MPD_HOST = os.getenv('MPD_HOST', default="127.0.0.1")
-
 
 def always_connect(instance, f):
     """
@@ -59,9 +51,9 @@ def decorate_command(instance, f):
 class ConnectClient(mpd.MPDClient):
     """Derived MPDClient with some helper methods added."""
 
-    def __init__(self, addr=MPD_HOST, port=MPD_PORT):
+    def __init__(self, host, port=None):
         self.required_tags = False
-        self.addr = addr
+        self.addr = host
         self.port = port
         self.view = None                # these are for communication
         self.fifo = self._get_fifo()    # with fzf

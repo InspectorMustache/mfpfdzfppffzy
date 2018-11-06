@@ -99,7 +99,7 @@ def print_mpd_return(mpd_return):
 
 def process_cli_args(cli_args):
     """Run application based on information gathered from the commandline."""
-    mpc = ConnectClient(addr=cli_args.mpd_host, port=cli_args.mpd_port)
+    mpc = ConnectClient(cli_args.mpd_host, port=cli_args.mpd_port)
     base_cmd = cli_args.command[0]
 
     if not cli_args.bare and base_cmd in mfp_custom_cmds.keys():
