@@ -45,16 +45,16 @@ argparser.add_argument(
     help='create headers from the search query or the displayed tag fields')
 
 
-def cat_str(cat, msg):
+def print_with_category(cat, msg):
     """
     Return ansi-term string where cat precedes msg and is printed in bold.
     """
     return '\033[1m{}\033[0m:\n{}'.format(cat, msg)
 
 
-def run_with_args(mpc, view_func, cli_args):
+def run_with_args(view_func, mpc, cli_args):
     """Run view_func with the processed cli_args."""
-    mpc._listen_on_fifo()
+    mpc.listen_on_fifo()
     kb = KeyBindings(cli_args.bind, fifo=mpc.fifo)
     view_settings = views.ViewSettings(
         cli_args.command[1:], keybinds=kb,
@@ -64,7 +64,7 @@ def run_with_args(mpc, view_func, cli_args):
     view_func(mpc, view_settings)
 
 
-def find_list_to_str(find_list):
+def mpd_list_to_str(find_list):
     """Create a string representation list of a find_list."""
     str_list = []
     for d in (x.items() for x in find_list):
@@ -76,6 +76,14 @@ def find_list_to_str(find_list):
 def find_dict_to_str(find_dict):
     """Create a string representation list of a find_dict."""
     return [':\n'.join(x) for x in find_dict.items()]
+
+
+def run_as_mpd_command(mpc, cli_args):
+    """
+    Take a command from the cli and try running it as a regular mpd command.
+    """
+    mpd_return = mpc.run_mpd_command(cli_args.command)
+    print_mpd_return(mpd_return)
 
 
 def print_mpd_return(mpd_return):
@@ -117,7 +125,7 @@ if __name__ == '__main__':
     try:
         process_cli_args(argparser.parse_args())
     except UserError as e:
-        print(cat_str('Error', str(e)))
+        print(print_with_category('Error', str(e)))
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(1)

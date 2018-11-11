@@ -43,7 +43,7 @@ def catch_command_error(f):
     return wrapped
 
 
-def decorate_command(instance, f):
+def decorate_mpd_command(instance, f):
     """Return cmd decorated with always_connect and catch_command_error."""
     return always_connect(instance, catch_command_error(f))
 
@@ -73,13 +73,13 @@ class ConnectClient(mpd.MPDClient):
         self.required_tags = False
         self.addr = host
         self.port = port
-        self.view = None                # these are for communication
-        self.fifo = self._get_fifo()    # with fzf
+        self.view = None               # these are for communication
+        self.fifo = self.get_fifo()    # with fzf
         self.fifo_thread = None
         super().__init__()
         self.ensure_connect()
 
-    def _get_fifo(self):
+    def get_fifo(self):
         """Create fifo in temp directory."""
         while True:
             try:  # this should be safer, right?
@@ -92,29 +92,30 @@ class ConnectClient(mpd.MPDClient):
         atexit.register(os.remove, path)
         return path
 
-    def _receive_from_fifo(self):
+    def receive_from_fifo(self):
         """
         Reads commands from self.fifo and parses them. Stops when NULL is
         received. This should only be run in parallel to the main application,
-        so it's probably better to run self._listen_on_fifo().
+        so it's probably better to run self.listen_on_fifo().
         """
         while True:
             with open(self.fifo) as fifo:
                 msg = fifo.read()
-                if msg.strip('\n') == 'NULL':
+                msg = msg.strip('\n')
+                if msg == 'NULL':
                     break
 
-                self.mfp_run_command(msg.strip('\n'))
+                self.run_mpd_command(shlex.split(msg))
 
-    def _listen_on_fifo(self):
+    def listen_on_fifo(self):
         """
         Run a thread that continuously receivs data from the fifo by calling
-        _receive_from_fifo.
+        receive_from_fifo.
         """
-        self.fifo_thread = Thread(target=self._receive_from_fifo, daemon=True)
+        self.fifo_thread = Thread(target=self.receive_from_fifo, daemon=True)
         self.fifo_thread.start()
 
-    def _ensure_tags(self, title):
+    def ensure_tags(self, title):
         """Ensure title has tags as keys."""
         for tag in filter(lambda x: x not in title.keys(), self.required_tags):
             title[tag] = ''
@@ -122,7 +123,7 @@ class ConnectClient(mpd.MPDClient):
 
     def ensure_connect(self):
         """
-        Wrap all mpd commands with the decorate_command (pseudo-)decorator.
+        Wrap all mpd commands with the decorate_mpd_command (pseudo-)decorator.
         """
         # make initial connection for using the commands method
         self.connect()
@@ -131,7 +132,7 @@ class ConnectClient(mpd.MPDClient):
         # is a bug with the mpd2 library
         for method_name in filter(lambda x: x in dir(self), self.commands()):
             method = getattr(self, method_name)
-            setattr(self, method_name, decorate_command(self, method))
+            setattr(self, method_name, decorate_mpd_command(self, method))
 
     def connect(self, *args, **kwargs):
         """Connect to mpd by using class fields."""
