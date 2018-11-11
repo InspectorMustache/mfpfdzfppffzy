@@ -132,14 +132,14 @@ class ConnectClient(mpd.MPDClient):
         else:
             return match
 
-    def mfp_run_command(self, cmd_str):
+    def run_mpd_command(self, cmd_list):
         """
-        Take in string cmd and parse it as an mpd command. Raise UserError if
-        it's not a valid mpd command.
+        Take in list cmd_list and parse it as an mpd command. Raise UserError
+        if it's not a valid mpd command.
         """
-        cmd_list = shlex.split(cmd_str)
         try:
-            cmd = cmd_list.pop(0)
-            return getattr(self, cmd)(*cmd_list)
+            cmd = cmd_list[0]
+            return getattr(self, cmd)(*cmd_list[1:])
         except AttributeError:
-            raise UserError('"{}" is not a valid mpd command.'.format(cmd_str))
+            raise UserError('"{}" is not a valid mpd command.'.format(
+                ' '.join(cmd_list)))

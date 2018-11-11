@@ -1,14 +1,11 @@
 import os
 import sys
 import argparse
+from functools import partial
+from collections import defaultdict
 from . import views
 from .client import ConnectClient
 from .utils import KeyBindings, UserError, MPD_FIELDS
-
-# commands that are specified by mfpfdzfppffzy and the view functions they are
-# associated with
-mfp_custom_cmds = {'find': views.singles_view,
-                   'list': views.container_view}
 
 
 class DynamicHeadersAction(argparse.Action):
@@ -102,12 +99,19 @@ def process_cli_args(cli_args):
     mpc = ConnectClient(cli_args.mpd_host, port=cli_args.mpd_port)
     base_cmd = cli_args.command[0]
 
-    if not cli_args.bare and base_cmd in mfp_custom_cmds.keys():
-        run_with_args(mpc, mfp_custom_cmds[base_cmd], cli_args)
+    if not cli_args.bare:
+        mfp_cmds[base_cmd](mpc, cli_args)
     else:
-        mpd_return = mpc.mfp_run_command(' '.join(cli_args.command))
-        print_mpd_return(mpd_return)
+        run_as_mpd_command(mpc, cli_args)
 
+
+# dict that selects the appropriate function:
+# either run_with_args with the appropriate view or run_as_mpd_command as a
+# fallback
+mfp_cmds = defaultdict(lambda: run_as_mpd_command)
+mfp_cmds.update({'find': partial(run_with_args, views.singles_view),
+                 'search': partial(run_with_args, views.singles_view),
+                 'list': partial(run_with_args, views.container_view)})
 
 if __name__ == '__main__':
     try:
