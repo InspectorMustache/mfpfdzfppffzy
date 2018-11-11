@@ -86,7 +86,10 @@ class ViewSettings():
         or not.
         """
         if self.dynamic_headers == DYNAMIC_HEADERS:
-            self.header_str = self.cmd_args[-1]
+            # make sure there is something to generate dynamic headers from
+            # probably not necessary because the command would generate errors
+            # because a view can be generated but it's nice to be safe
+            self.header_str = ([self.cmd] + self.cmd_args)[-1]
         elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
             self.header_str = get_formatted_output_line(
                 *[x.capitalize() for x in args])
