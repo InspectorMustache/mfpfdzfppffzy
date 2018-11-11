@@ -48,6 +48,24 @@ def decorate_command(instance, f):
     return always_connect(instance, catch_command_error(f))
 
 
+def add_required_tags(f):
+    """
+    Ensure required tags for find and search based commands by decoration.
+    """
+    @wraps(f)
+    def wrapped(self, *args, **kwargs):
+        # make sure we get all the tags we need so we don't get a key error
+        self.required_tags = kwargs.pop('required_tags', False)
+        match = f(self, *args, **kwargs)
+
+        if self.required_tags:
+            return list(map(self.ensure_tags, match))
+        else:
+            return match
+
+    return wrapped
+
+
 class ConnectClient(mpd.MPDClient):
     """Derived MPDClient with some helper methods added."""
 
@@ -122,15 +140,14 @@ class ConnectClient(mpd.MPDClient):
         except ConnectionRefusedError:
             raise UserError("Unable to establish connection to MPD server.")
 
+    @add_required_tags
     def find(self, *args, **kwargs):
-        # make sure we get all the tags we need so we don't get a key error
-        self.required_tags = kwargs.pop('required_tags', False)
-        match = super().find(*args, **kwargs)
+        return super().find(*args, **kwargs)
 
-        if self.required_tags:
-            return list(map(self._ensure_tags, match))
-        else:
-            return match
+    @add_required_tags
+    def search(self, *args, **kwargs):
+        return super().search(*args, **kwargs)
+
 
     def run_mpd_command(self, cmd_list):
         """
