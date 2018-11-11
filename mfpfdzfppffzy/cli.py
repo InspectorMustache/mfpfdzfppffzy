@@ -66,16 +66,22 @@ def run_with_args(view_func, mpc, cli_args):
 
 def mpd_list_to_str(find_list):
     """Create a string representation list of a find_list."""
-    str_list = []
-    for d in (x.items() for x in find_list):
-        str_list.extend(':\n'.join(y) for y in d)
+    try:
+        # if it's a list of dicts process each individually into a string
+        str_list = []
+        for d in (x.items() for x in find_list):
+            str_list.append('\n'.join(':\n'.join(y) for y in d))
 
-    return str_list
+        return '\n\n'.join(str_list)
+    except AttributeError:
+        # otherwise just process it as a list of strings
+        return '\n'.join(find_list)
 
 
 def find_dict_to_str(find_dict):
     """Create a string representation list of a find_dict."""
-    return [':\n'.join(x) for x in find_dict.items()]
+    str_list = [':\n'.join(x) for x in find_dict.items()]
+    return '\n'.join(str_list)
 
 
 def run_as_mpd_command(mpc, cli_args):
@@ -91,10 +97,10 @@ def print_mpd_return(mpd_return):
     try:
         if type(mpd_return) is dict:
             mpd_return = find_dict_to_str(mpd_return)
-        elif type(mpd_return[0]) is dict:
-            mpd_return = find_list_to_str(mpd_return)
-
-        mpd_return = '\n'.join(mpd_return)
+        elif type(mpd_return) is list:
+            mpd_return = mpd_list_to_str(mpd_return)
+        else:
+            mpd_return = '\n'.join(mpd_return)
     except TypeError:
         pass
 
