@@ -149,6 +149,16 @@ class ConnectClient(mpd.MPDClient):
     def search(self, *args, **kwargs):
         return super().search(*args, **kwargs)
 
+    def handle_view_settings(self, view_settings, *args, **kwargs):
+        """Run a command associated with a ViewSettings object."""
+        try:
+            return getattr(self, view_settings.cmd)(
+                *view_settings.cmd_args, *args, **kwargs)
+        except AttributeError:
+            # this function should never be called with a non-registered method
+            # as a command; a ViewSettings object should only be created with a
+            # specific associated ConnectClient method in mind
+            raise NotImplementedError
 
     def run_mpd_command(self, cmd_list):
         """

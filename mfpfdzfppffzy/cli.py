@@ -57,7 +57,7 @@ def run_with_args(view_func, mpc, cli_args):
     mpc.listen_on_fifo()
     kb = KeyBindings(cli_args.bind, fifo=mpc.fifo)
     view_settings = views.ViewSettings(
-        cli_args.command[1:], keybinds=kb,
+        cli_args.command, keybinds=kb,
         dynamic_headers=cli_args.dynamic_headers,
         sort_field=cli_args.sort, the_strip=cli_args.the_strip)
 

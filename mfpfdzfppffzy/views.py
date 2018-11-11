@@ -23,14 +23,15 @@ class ViewSettings():
     Returns string arguments for command and header in a processible tuple
     form.
     """
-    def __init__(self, cmd,
+    def __init__(self, full_cmd,
                  out_type=dict,  # list of what type to expect from mpd
                  sort_field=None,
                  dynamic_headers=NO_DYNAMIC_HEADERS,
                  the_strip=False,
                  additional_args=None,
                  keybinds=None):
-        self.cmd = cmd
+        self.cmd = full_cmd[0]
+        self.cmd_args = full_cmd[1:]
         self.out_type = out_type
         self.the_strip = the_strip  # include/don't include "the" when sorting
         self.sort_field = sort_field
@@ -85,7 +86,7 @@ class ViewSettings():
         or not.
         """
         if self.dynamic_headers == DYNAMIC_HEADERS:
-            self.header_str = self.cmd[-1]
+            self.header_str = self.cmd_args[-1]
         elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
             self.header_str = get_formatted_output_line(
                 *[x.capitalize() for x in args])
@@ -153,7 +154,7 @@ class FilterView():
     def append_filters_to_list(self, l):
         """Takes a list l and appends all selected filters to it."""
         for state, sel in self.selections.items():
-            l.append(self.views[state].cmd[0])
+            l.append(self.views[state].cmd_args[0])
             l.append(sel)
 
     def get_adapted_view(self):
@@ -166,7 +167,7 @@ class FilterView():
         if self.dynamic_headers and self.state != 0:
             view.header = self.selections[self.state - 1]
         # adding filters
-        self.append_filters_to_list(view.cmd)
+        self.append_filters_to_list(view.cmd_args)
 
         return view
 
@@ -322,7 +323,7 @@ def container_view(mpc, view_settings):
     Use args to build a view that refers to another underlying view (such as
     a list of artists or albums). Return the selection.
     """
-    entries = mpc.list(*view_settings.cmd)
+    entries = mpc.handle_view_settings(view_settings)
     view_settings.update_headers()
     view_settings.out_type = str
     return create_plain_view(entries, view_settings)
@@ -336,7 +337,8 @@ def track_view(mpc, view_settings):
     Return the selection.
     """
     required_tags = ('track', 'title', view_settings.sort_field)
-    tracks = mpc.find(*view_settings.cmd, required_tags=required_tags)
+    tracks = mpc.handle_view_settings(view_settings,
+                                      required_tags=required_tags)
     view_settings.update_headers()
     return create_view_with_custom_entries(
         tracks, get_track_output_line, view_settings)
@@ -348,7 +350,8 @@ def singles_view(mpc, view_settings):
     """
     tags = ('artist', 'album', 'title')
     required_tags = (*tags, view_settings.sort_field)
-    singles = mpc.find(*view_settings.cmd, required_tags=required_tags)
+    singles = mpc.handle_view_settings(view_settings,
+                                       required_tags=required_tags)
     view_settings.update_headers(*tags)
     return create_view_with_custom_entries(
         singles, get_tag_output_line, view_settings,
