@@ -158,6 +158,8 @@ class ConnectClient(mpd.MPDClient):
             # this function should never be called with a non-registered method
             # as a command; a ViewSettings object should only be created with a
             # specific associated ConnectClient method in mind
+            # otherwise the command should have been passed directly to the mpd
+            # server and no ViewSettings object should have been created
             raise NotImplementedError
 
     def run_mpd_command(self, cmd_list):

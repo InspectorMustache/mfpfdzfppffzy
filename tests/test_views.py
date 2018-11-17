@@ -3,9 +3,10 @@ import shutil
 import random
 import hypothesis.strategies as st
 import mfpfdzfppffzy.views as views
-from copy import copy, deepcopy
+from copy import copy
 from hypothesis import given
 from pytest import fixture
+from mfpfdzfppffzy.cli import mfp_cmds
 
 # NoneType for use with isinstance() as part of a tuple
 NoneType = type(None)
@@ -27,13 +28,32 @@ MPD_FIND_RETURN_DICT = {'file': st.from_regex(TAG_RX),
                         'track': st.from_regex(TAG_RX),
                         'date': st.from_regex(TAG_RX),
                         'genre': st.from_regex(TAG_RX)}
+MPD_COMMANDS = {'cleartagid', 'clearerror', 'findadd', 'replay_gain_status',
+                'channels', 'find', 'unsubscribe', 'swapid', 'list',
+                'toggleoutput', 'notcommands', 'listmounts', 'lsinfo',
+                'listplaylistinfo', 'search', 'replay_gain_mode', 'listall',
+                'plchanges', 'config', 'clear', 'previous', 'consume',
+                'commands', 'listfiles', 'seek', 'playid', 'pause', 'idle',
+                'mount', 'add', 'addtagid', 'rm', 'mixrampdelay', 'random',
+                'searchadd', 'rename', 'swap', 'delete', 'currentsong',
+                'moveid', 'kill', 'playlistclear', 'subscribe', 'rangeid',
+                'seekcur', 'playlistmove', 'update', 'enableoutput',
+                'urlhandlers', 'listplaylists', 'playlistdelete', 'prioid',
+                'crossfade', 'addid', 'playlistid', 'password', 'readmessages',
+                'playlistfind', 'play', 'move', 'playlistsearch', 'deleteid',
+                'sendmessage', 'searchaddpl', 'listallinfo', 'playlist',
+                'playlistinfo', 'repeat', 'plchangesposid', 'setvol', 'load',
+                'stop', 'stats', 'next', 'ping', 'playlistadd', 'prio',
+                'outputs', 'listplaylist', 'count', 'disableoutput', 'single',
+                'save', 'close', 'decoders', 'mixrampdb', 'shuffle', 'seekid',
+                'readcomments', 'rescan', 'status', 'tagtypes'}
 
 
 def monkey_mpc(find_return=None, list_return=None):
     """
     Return a ConnectClient class instance whose find and list methods just
-    return want_return. (Not really monkeypatching, this is just passed instead
-    of a real ConnectClient instance).
+    return the specified return value. (Not really monkeypatching, this is just
+    passed instead of a real ConnectClient instance).
     """
     class FakeConnectClient():
         def __init__(self, *args, **kwargs):
@@ -43,8 +63,16 @@ def monkey_mpc(find_return=None, list_return=None):
         def find(self, *args, **kwargs):
             return self.find_return
 
+        def search(self, *args, **kwargs):
+            return self.find_return
+
         def list(self, *args, **kwargs):
             return self.list_return
+
+        def handle_view_settings(self, view_settings, *args, **kwargs):
+            return getattr(
+                self, view_settings.cmd)(
+                    *view_settings.cmd_args, *args, **kwargs)
 
     return FakeConnectClient()
 
@@ -76,6 +104,30 @@ def is_find_return_sel(ret):
             assert key in ret
 
 
+def get_cmd_strategy(include_mfp=False, mfp_only=False):
+    """
+    Create a strategy which generates list where the first item is
+    one of the supported mfp_commands. Include custom defined mfpfdzfppffzy
+    commands if include_mfp is True.
+    """
+    if include_mfp and mfp_only:
+        raise TypeError('include_mfp and mfp_only are mutually exclusive.')
+    elif include_mfp:
+        cmds = list(MPD_COMMANDS | set(mfp_cmds.keys()))
+    elif mfp_only:
+        cmds = list(mfp_cmds.keys())
+    else:
+        cmds = list(MPD_COMMANDS)
+
+    base_cmd_st = st.sampled_from(cmds)
+    return base_cmd_st.flatmap(get_cmd_flatmap)
+
+
+def get_cmd_flatmap(base):
+    l_st = st.lists(elements=st.text())
+    return l_st.map(lambda x: [base] + x)
+
+
 @given(st.lists(elements=st.text(min_size=1), min_size=1),
        st.lists(elements=st.text(min_size=1), min_size=1))
 def test_view_settings_header(cmd, tags):
@@ -98,15 +150,17 @@ def test_view_settings_header(cmd, tags):
 
 
 @given(
-    st.builds(views.ViewSettings, st.lists(elements=st.text())),
+    get_cmd_strategy(mfp_only=True),
     st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT)),
     st.lists(st.text()))
-def test_custom_view(viewsettings, find_return, list_return):
-    mpc = monkey_mpc(list_return=list_return)
+def test_custom_view(cmd, find_return, list_return):
+    viewsettings = views.ViewSettings(cmd)
+    viewsettings.cmd = 'list'
+    mpc = monkey_mpc(list_return=list_return, find_return=find_return)
     sel = views.container_view(mpc, viewsettings)
     assert isinstance(sel, (str, NoneType))
 
-    mpc.find_return = find_return
+    viewsettings.cmd = 'find'
     sel = views.singles_view(mpc, viewsettings)
     is_find_return_sel(sel)
 
