@@ -8,6 +8,8 @@ from hypothesis import given
 from pytest import fixture
 from mfpfdzfppffzy.cli import mfp_cmds
 
+# we only need the names of the mfp commands
+mfp_cmds = tuple(mfp_cmds.keys())
 # NoneType for use with isinstance() as part of a tuple
 NoneType = type(None)
 
@@ -113,9 +115,9 @@ def get_cmd_strategy(include_mfp=False, mfp_only=False):
     if include_mfp and mfp_only:
         raise TypeError('include_mfp and mfp_only are mutually exclusive.')
     elif include_mfp:
-        cmds = list(MPD_COMMANDS | set(mfp_cmds.keys()))
+        cmds = list(MPD_COMMANDS | set(mfp_cmds))
     elif mfp_only:
-        cmds = list(mfp_cmds.keys())
+        cmds = list(mfp_cmds)
     else:
         cmds = list(MPD_COMMANDS)
 
@@ -200,18 +202,22 @@ def test_duplicate_handling(dup_text, find_dict):
     assert len(fzf_strs) == len(set(fzf_strs))
 
 
-# TODO: test with min_size = 0 once this works
 @given(st.lists(elements=st.fixed_dictionaries((MPD_FIND_RETURN_DICT)),
                 min_size=1))
 def test_filter_view(library):
     # build views from every mpd tag
-    view_list = [views.ViewSettings([x]) for x in MPD_FIND_RETURN_DICT]
+    view_list = []
+    for tag in MPD_FIND_RETURN_DICT:
+        view = views.ViewSettings(
+            [random.choice(mfp_cmds), tag])
+        view_list.append(view)
+
     mpc = monkey_mpc()
     filter_view = views.FilterView(mpc, view_list, dynamic_headers=True)
 
     list_returns = {}
     for index, view in enumerate(view_list):
-        view_filter = view.cmd[0]
+        view_filter = view.cmd_args[0]
         # very difficult to do real testing here without reimplementing the mpd
         # library - so just return a list of all values of the provided tag for
         # mpc.list
