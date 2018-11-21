@@ -208,9 +208,9 @@ def test_filter_view(library):
     # build views from every mpd tag
     view_list = []
     for tag in MPD_FIND_RETURN_DICT:
-        view = views.ViewSettings(
+        vs = views.ViewSettings(
             [random.choice(mfp_cmds), tag])
-        view_list.append(view)
+        view_list.append(vs)
 
     mpc = monkey_mpc()
     filter_view = views.FilterView(mpc, view_list, dynamic_headers=True)
@@ -241,7 +241,7 @@ def test_filter_view(library):
 @given(st.lists(elements=st.fixed_dictionaries((MPD_FIND_RETURN_DICT))))
 def test_sorting(find_list):
     list_list = [x['artist'] for x in find_list]
-    vs = views.ViewSettings('', sort_field='artist')
+    vs = views.ViewSettings(['dummy', 'command'], sort_field='artist')
 
     # sort list of find dicts
     sorted_find_list = sorted(find_list, key=vs.sort_func)
