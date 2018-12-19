@@ -8,8 +8,14 @@ def get_kb_str(keybind, mfp_cmd=None, fifo=None):
     return '{}:execute#echo {} > {}#'.format(keybind, mfp_cmd, fifo)
 
 
-@given(text().filter(lambda x: '&&' not in x),
-       text().filter(lambda x: '&&' not in x))
+def text_filter(x):
+    """Filter function for keybindings text input."""
+    for c in ('&&', ',', ')'):
+        if c in x: return False
+    return True
+
+@given(text().filter(text_filter),
+       text().filter(text_filter))
 def test_key_bindings(mfp_cmd1, mfp_cmd2):
     # I trust that tempfile.mktemp doesn't create files with quotes in them...?
     fifo = '/some/path with a a space/somewhere'
@@ -18,26 +24,33 @@ def test_key_bindings(mfp_cmd1, mfp_cmd2):
     # {} should be addable by the user and not cause any problems
     mfp_cmd1 += ' {}'
 
+    # a KeyBindings object should always be a tuple with a single string
+    # element
+    assert len(kb) == 1
+    assert type(*kb) is str
+
     # test keybinds created by initiation
-    assert 'ctrl-b:x-1,ctrl-d:x-2' in str(kb)
-    assert get_kb_str('ctrl-a', mfp_cmd='y-1', fifo=fifo) in str(kb)
-    assert get_kb_str('ctrl-c', mfp_cmd='y-2', fifo=fifo) in str(kb)
+    assert 'ctrl-b:x-1' in kb[0]
+    assert 'ctrl-d:x-2' in kb[0]
+    assert get_kb_str('ctrl-a', mfp_cmd='y-1', fifo=fifo) in kb[0]
+    assert get_kb_str('ctrl-c', mfp_cmd='y-2', fifo=fifo) in kb[0]
 
     # test conversion of single commands
-    kb['ctrl-e'] = 'mfp({})'.format(mfp_cmd1)
-    kb['ctrl-f'] = 'mfp({})'.format(mfp_cmd2)
+    fzf_bind_args += ',ctrl-e:mfp({})'.format(mfp_cmd1)
+    fzf_bind_args += ',ctrl-f:mfp({})'.format(mfp_cmd2)
 
-    assert get_kb_str('ctrl-e', mfp_cmd=mfp_cmd1, fifo=fifo) in str(kb)
-    assert get_kb_str('ctrl-f', mfp_cmd=mfp_cmd2, fifo=fifo) in str(kb)
+    kb = KeyBindings(fzf_bind_args, fifo=fifo)
+    assert get_kb_str('ctrl-e', mfp_cmd=mfp_cmd1, fifo=fifo) in kb[0]
+    assert get_kb_str('ctrl-f', mfp_cmd=mfp_cmd2, fifo=fifo) in kb[0]
 
     # test conversion of multiple commands
-    kb = KeyBindings(fzf_bind_args, fifo=fifo)
     mfp_chained = ' && '.join([mfp_cmd1, mfp_cmd2])
-    kb['ctrl-g'] = 'mfp({})'.format(mfp_chained)
+    fzf_bind_args += ',ctrl-g:mfp({})'.format(mfp_chained)
+    kb = KeyBindings(fzf_bind_args, fifo=fifo)
     assert 'ctrl-g:execute#echo {0} > {2} && echo {1} > {2}#'.format(
-        mfp_cmd1.strip(), mfp_cmd2.strip(), fifo) in str(kb)
+        mfp_cmd1.strip(), mfp_cmd2.strip(), fifo) in kb[0]
 
     # finally assert that str(KeyBindings) will output nothing if there are no
     # keybindings
     kb = KeyBindings('', fifo='')
-    assert str(kb) == ''
+    assert len(kb) == 0

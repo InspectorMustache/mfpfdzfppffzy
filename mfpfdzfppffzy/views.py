@@ -36,7 +36,7 @@ class ViewSettings():
         self.the_strip = the_strip  # include/don't include "the" when sorting
         self.sort_field = sort_field
         # create tuple from keybinds so it can be used as subprocess args
-        self.keybinds = tuple(str(keybinds))
+        self.keybinds = keybinds
         self.dynamic_headers = dynamic_headers
         self.header_str = ''
         self.additional_args = additional_args or []
