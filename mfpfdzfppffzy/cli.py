@@ -34,7 +34,8 @@ argparser.add_argument('--mpd-port',
                        help='port address of a remote or local mpd server')
 argparser.add_argument('--bare', action='store_true',
                        help='simply pass command to mpd and return the result')
-argparser.add_argument('--bind', help='keybindings in a comma-separated list')
+argparser.add_argument('--bind', default='',
+                       help='keybindings in a comma-separated list')
 argparser.add_argument('--sort', choices=MPD_FIELDS, metavar='MPD-TAG',
                        help='tag field to sort items by')
 argparser.add_argument(
