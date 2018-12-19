@@ -5,7 +5,8 @@ from functools import partial
 from collections import defaultdict
 from . import views
 from .client import ConnectClient
-from .utils import KeyBindings, UserError, MPD_FIELDS
+from .bind import KeyBindings
+from .utils import UserError, MPD_FIELDS
 
 
 class DynamicHeadersAction(argparse.Action):

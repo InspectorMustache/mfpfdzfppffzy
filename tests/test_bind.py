@@ -1,4 +1,4 @@
-from mfpfdzfppffzy.utils import KeyBindings
+from mfpfdzfppffzy.bind import KeyBindings
 from hypothesis import given
 from hypothesis.strategies import text
 
@@ -13,6 +13,7 @@ def text_filter(x):
     for c in ('&&', ',', ')'):
         if c in x: return False
     return True
+
 
 @given(text().filter(text_filter),
        text().filter(text_filter))
