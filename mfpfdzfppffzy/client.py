@@ -2,6 +2,7 @@ import os
 import shlex
 import tempfile
 import atexit
+import logging
 import mpd
 from threading import Thread
 from functools import wraps
@@ -76,6 +77,7 @@ class ConnectClient(mpd.MPDClient):
         self.view = None               # these are for communication
         self.fifo = self.get_fifo()    # with fzf
         self.fifo_thread = None
+        atexit.register(self.close_fifo)
         super().__init__()
         self.ensure_connect()
 
@@ -89,8 +91,35 @@ class ConnectClient(mpd.MPDClient):
             except FileExistsError:
                 continue
 
-        atexit.register(os.remove, path)
         return path
+
+    def close_fifo(self):
+        """Close and delete fifo."""
+
+        # just a precaution, the thread should be garbage collected at this
+        # point
+        with open(self.fifo, 'w') as fifo:
+            fifo.write('NULL')
+
+        os.remove(self.fifo)
+
+    def get_fifo_logger(self):
+        """
+        Create and return a logger that keeps track of commands sent to the
+        fifo.
+        """
+        logger = logging.getLogger('fifo_log')
+        logger.setLevel(logging.INFO)
+        handler = logging.FileHandler('{}.log'.format(self.fifo))
+        formatter = logging.Formatter(
+            '%(asctime)s %(levelname)s | %(message)s', datefmt='%H:%M:%S')
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+        atexit.register(os.remove, '{}.log'.format(self.fifo))
+
+        return logger
 
     def receive_from_fifo(self):
         """
@@ -98,14 +127,23 @@ class ConnectClient(mpd.MPDClient):
         received. This should only be run in parallel to the main application,
         so it's probably better to run self.listen_on_fifo().
         """
+        fifo_logger = self.get_fifo_logger()
+
         while True:
+            fifo_logger.info('waiting for message')
             with open(self.fifo) as fifo:
                 msg = fifo.read()
                 msg = msg.strip('\n')
+                fifo_logger.info('received: {}'.format(msg))
                 if msg == 'NULL':
+                    fifo_logger.info('closing fifo'.format(msg))
                     break
 
-                self.run_mpd_command(shlex.split(msg))
+                try:
+                    self.run_mpd_command(shlex.split(msg))
+                except UserError as exc:
+                    fifo_logger.warning(
+                        'a UserError was raised: {}'.format(exc))
 
     def listen_on_fifo(self):
         """
