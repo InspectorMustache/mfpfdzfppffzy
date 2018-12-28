@@ -77,7 +77,7 @@ class ConnectClient(mpd.MPDClient):
         self.view = None               # these are for communication
         self.fifo = self.get_fifo()    # with fzf
         self.fifo_thread = None
-        atexit.register(self.close_fifo)
+        atexit.register(os.remove, self.fifo)
         super().__init__()
         self.ensure_connect()
 
@@ -92,16 +92,6 @@ class ConnectClient(mpd.MPDClient):
                 continue
 
         return path
-
-    def close_fifo(self):
-        """Close and delete fifo."""
-
-        # just a precaution, the thread should be garbage collected at this
-        # point
-        with open(self.fifo, 'w') as fifo:
-            fifo.write('NULL')
-
-        os.remove(self.fifo)
 
     def get_fifo_logger(self):
         """
@@ -135,9 +125,6 @@ class ConnectClient(mpd.MPDClient):
                 msg = fifo.read()
                 msg = msg.strip('\n')
                 fifo_logger.info('received: {}'.format(msg))
-                if msg == 'NULL':
-                    fifo_logger.info('closing fifo'.format(msg))
-                    break
 
                 try:
                     self.run_mpd_command(shlex.split(msg))
