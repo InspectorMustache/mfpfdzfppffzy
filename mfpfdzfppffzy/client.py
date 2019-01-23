@@ -178,7 +178,8 @@ class ConnectClient(mpd.MPDClient):
         """Run a command associated with a ViewSettings object."""
         try:
             return getattr(self, view_settings.cmd)(
-                *view_settings.cmd_args, *args, **kwargs)
+                *view_settings.cmd_args, *args,
+                **view_settings.cmd_kwargs, **kwargs)
         except AttributeError:
             # this function should never be called with a non-registered method
             # as a command; a ViewSettings object should only be created with a
