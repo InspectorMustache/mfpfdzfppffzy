@@ -53,9 +53,9 @@ MPD_COMMANDS = {'cleartagid', 'clearerror', 'findadd', 'replay_gain_status',
 
 def monkey_mpc(find_return=None, list_return=None):
     """
-    Return a ConnectClient class instance whose find and list methods just
-    return the specified return value. (Not really monkeypatching, this is just
-    passed instead of a real ConnectClient instance).
+    Return a ConnectClient class instance whose find, search and list methods
+    just return the specified return value. (Not really monkeypatching, this is
+    just passed instead of a real ConnectClient instance).
     """
     class FakeConnectClient():
         def __init__(self, *args, **kwargs):
@@ -86,10 +86,10 @@ def monkey_create_view(monkeypatch):
     list it's passed.
     """
 
-    def fake_create_view(items, *args):
-        items = tuple(items)
+    def fake_create_view(view_settings, *args):
+        entries = tuple(view_settings.entries)
         try:
-            return items[random.randrange(0, len(items))]
+            return entries[random.randrange(0, len(entries))]
         except ValueError:
             return None
 
@@ -153,7 +153,7 @@ def test_view_settings_header(cmd, tags):
 
 @given(
     get_cmd_strategy(mfp_only=True),
-    st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT)),
+    st.lists(elements=st.fixed_dictionaries(MPD_FIND_RETURN_DICT), min_size=1),
     st.lists(st.text()))
 def test_custom_view(cmd, find_return, list_return):
     viewsettings = views.ViewSettings(cmd)
@@ -162,10 +162,14 @@ def test_custom_view(cmd, find_return, list_return):
     sel = views.container_view(mpc, viewsettings)
     assert isinstance(sel, (str, NoneType))
 
+    # create a new ViewSettings instance so we get a fresh entries field
+    viewsettings = views.ViewSettings(cmd)
     viewsettings.cmd = 'find'
     sel = views.singles_view(mpc, viewsettings)
     is_find_return_sel(sel)
 
+    viewsettings = views.ViewSettings(cmd)
+    viewsettings.cmd = 'search'
     sel = views.track_view(mpc, viewsettings)
     is_find_return_sel(sel)
 

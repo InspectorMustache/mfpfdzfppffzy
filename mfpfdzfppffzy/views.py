@@ -343,7 +343,7 @@ def create_view_with_custom_entries(mpc, entry_func, view_settings,
     entry_func_args).
     """
     add_view_entries(mpc, view_settings, entry_func, *entry_func_args)
-    create_view(view_settings)
+    return create_view(view_settings)
 
 
 def container_view(mpc, view_settings):
