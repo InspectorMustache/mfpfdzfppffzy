@@ -6,6 +6,7 @@ import re
 import shutil
 from copy import deepcopy
 from .utils import UserError, lax_int, coroutine
+import time
 
 FZF_PROG_OPTS = ('-m', '--height=100%', '--inline-info', '--no-sort')
 FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
@@ -24,7 +25,6 @@ class ViewSettings():
     form.
     """
     def __init__(self, full_cmd,
-                 out_type=dict,  # list of what type to expect from mpd
                  sort_field=None,
                  dynamic_headers=NO_DYNAMIC_HEADERS,
                  the_strip=False,
@@ -33,7 +33,6 @@ class ViewSettings():
                  required_tags=None):
         self.cmd = full_cmd[0]
         self.cmd_args = full_cmd[1:]
-        self.out_type = out_type
         self.sort_field = sort_field
         self.dynamic_headers = dynamic_headers
         self.the_strip = the_strip  # include/don't include "the" when sorting
@@ -41,6 +40,8 @@ class ViewSettings():
         self.keybinds = keybinds
         self.required_tags = required_tags
         self.header_str = ''
+        self.out_type = dict
+        self.entries = []
 
     @property
     def header(self):
@@ -98,9 +99,9 @@ class ViewSettings():
         or not.
         """
         if self.dynamic_headers == DYNAMIC_HEADERS:
-            # make sure there is something to generate dynamic headers from
-            # probably not necessary because the command would generate errors
-            # because a view can be generated but it's nice to be safe
+            # make extra sure there is something to generate dynamic headers
+            # from probably not necessary because this means the command is
+            # invalid but it's nice to be safe
             self.header_str = ([self.cmd] + self.cmd_args)[-1]
         elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
             self.header_str = get_formatted_output_line(
@@ -202,11 +203,10 @@ class FilterView():
         return self.mpc.find(*filters_cmd)
 
 
-def get_track_output_line(find_dict, *args):
+def get_track_output_line(find_dict):
     """
     Create a formatted line from find_dict including track number and
-    title. Additional args will be ignored but are allowed for compatibility
-    with add_entries_to_list.
+    title.
     """
     return '{:02} - {}'.format(
         lax_int(find_dict['track']), find_dict['title'])
@@ -242,11 +242,12 @@ def get_tag_output_line(find_dict, *tags):
     return get_formatted_output_line(*find_tags)
 
 
-def db_add_view_entries(mpc, view_settings, entry_func, *entry_func_args):
+def add_view_entries(mpc, view_settings, entry_func, *entry_func_args):
     """
-    Modify the database so that there are unique stickers for all view entries.
+    Add view_str's to the dict in view_settings.entries.
     """
-    adder = create_sticker_adder(mpc, entry_func, *entry_func_args)
+    adder = create_view_entry_adder(
+        view_settings, entry_func, *entry_func_args)
     for item in mpc.handle_view_settings(view_settings):
         adder.send(item)
 
@@ -254,19 +255,16 @@ def db_add_view_entries(mpc, view_settings, entry_func, *entry_func_args):
 
 
 @coroutine
-def create_sticker_adder(mpc, entry_func, *entry_func_args):
+def create_view_entry_adder(view_settings, entry_func, *entry_func_args):
     """
-    Yield an mpd object and create a view_str for it using entry_func. Attach
-    that entry to the object using stickers.
+    Yield an mpd object and create a view_str for it using entry_func. Append
+    that str to the entries list of the view_settings object.
     """
     while True:
-        mpd_obj = yield
-        view_str = entry_func(mpd_obj, *entry_func_args)
-
-        # add NUL until we get a unique entry
-        while mpc.sticker_find('song', '', view_str):
-            view_str += '\x0000'
-        mpc.sticker_set('song', mpd_obj['file'], 'view_str', view_str)
+        find_dict = yield
+        view_str = entry_func(find_dict, *entry_func_args)
+        find_dict['view_str'] = view_str
+        view_settings.entries.append(find_dict)
 
 
 @coroutine
@@ -279,19 +277,6 @@ def add_entry_to_dict(entry_func, *entry_func_args):
     while True:
         find_entry = yield
         find_entry['fzf_string'] = entry_func(find_entry, *entry_func_args)
-
-
-def add_entries_to_list(find_list, entry_func, entry_func_args):
-    """
-    Use entry_func with entry_func_args to create a custom entry for each dict
-    in find_dict. Make sure there are no duplicates afterwards.
-    """
-    adder = add_entry_to_dict(entry_func, *entry_func_args)
-    for d in find_list:
-        adder.send(d)
-
-    adder.close()
-    adapt_find_duplicates(find_list)
 
 
 def adapt_find_duplicates(find_list):
@@ -323,14 +308,14 @@ def pipe_to_fzf(content, *args):
     return stdout, fzf.returncode
 
 
-def get_view_entries(mpc, view_settings):
+def get_view_entries(view_settings):
     """
-    Get view entries either from stickers or from the view_settings command.
+    Create a list of entries for the finder. Sort before returning.
     """
-    entries = list(map(lambda x: x['sticker'][8:],
-                       mpc.sticker_find('song', '', 'view_str')))
-    if not entries:
-        entries = mpc.handle_view_settings(view_settings)
+    if view_settings.out_type == str:
+        entries = view_settings.entries
+    else:
+        entries = [x['view_str'] for x in view_settings.entries]
 
     if view_settings.sort_field or view_settings.the_strip:
         entries.sort(key=view_settings.sort_func)
@@ -338,10 +323,10 @@ def get_view_entries(mpc, view_settings):
     return entries
 
 
-def create_view(mpc, view_settings):
+def create_view(view_settings):
     """
     Create a fzf view from view_settings."""
-    view = '\n'.join(get_view_entries(mpc, view_settings))
+    view = '\n'.join(get_view_entries(view_settings))
     sel, returncode = pipe_to_fzf(view, *view_settings.keybinds,
                                   *view_settings.header,
                                   *view_settings.additional_args)
@@ -351,25 +336,14 @@ def create_view(mpc, view_settings):
         return None
 
 
-def create_plain_view(items, view_settings):
-    """Create a view from items with sorting it first."""
-    if view_settings.sort_field or view_settings.the_strip:
-        items.sort(key=view_settings.sort_func)
-    create_view(items, view_settings)
-
-
-def create_view_with_custom_entries(items, entry_func, view_settings,
+def create_view_with_custom_entries(mpc, entry_func, view_settings,
                                     entry_func_args=()):
     """
-    Use entry func to add a custom entry to items which will be used by fzf
-    to display entries. items must be an mpd find return list.
+    Create a view from custom entries generated by entry_func (and
+    entry_func_args).
     """
-    add_entries_to_list(items, entry_func, entry_func_args)
-    if view_settings.sort_field:
-        items.sort(key=view_settings.sort_func)
-
-    entries = [x['fzf_string'] for x in items]
-    create_view(entries, view_settings)
+    add_view_entries(mpc, view_settings, entry_func, *entry_func_args)
+    create_view(view_settings)
 
 
 def container_view(mpc, view_settings):
@@ -379,7 +353,8 @@ def container_view(mpc, view_settings):
     """
     view_settings.update_headers()
     view_settings.out_type = str
-    return create_view(mpc, view_settings)
+    view_settings.entries = mpc.handle_view_settings(view_settings)
+    return create_view(view_settings)
 
 
 def track_view(mpc, view_settings):
@@ -389,12 +364,10 @@ def track_view(mpc, view_settings):
     Optionally specify sorting with sort_field and a header for fzf.
     Return the selection.
     """
-    required_tags = ('track', 'title', view_settings.sort_field)
-    tracks = mpc.handle_view_settings(view_settings,
-                                      required_tags=required_tags)
+    view_settings.required_tags = ('track', 'title', view_settings.sort_field)
     view_settings.update_headers()
     return create_view_with_custom_entries(
-        tracks, get_track_output_line, view_settings)
+        mpc, get_track_output_line, view_settings)
 
 
 def singles_view(mpc, view_settings):
@@ -402,10 +375,8 @@ def singles_view(mpc, view_settings):
     Use args as commands to the MPD Client and build a track-based view.
     """
     tags = ('artist', 'album', 'title')
-    required_tags = (*tags, view_settings.sort_field)
-    singles = mpc.handle_view_settings(view_settings,
-                                       required_tags=required_tags)
+    view_settings.required_tags = (*tags, view_settings.sort_field)
     view_settings.update_headers(*tags)
     return create_view_with_custom_entries(
-        singles, get_tag_output_line, view_settings,
+        mpc, get_tag_output_line, view_settings,
         entry_func_args=tags)
