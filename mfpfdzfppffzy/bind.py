@@ -10,15 +10,25 @@ class KeyBindings():
     method as a command line parameter.
     """
 
-    def __init__(self, args, fifo=None):
+    def __init__(self, bind_str, fifo=None):
         self.fifo = fifo
         self.bind_list = []
         self.bind_tuple = None
         self.cmd_temp = 'echo {} > ' + self.fifo
-        self.exec_temp = 'execute#{}#'
-        self.populate_bind_list(args)
+        self.exec_temp = 'execute-silent#{} &#'
+        self.parse_bind_str(bind_str)
 
-    def populate_bind_list(self, binds):
+    def parse_bind_str(self, bind_str):
+        """
+        If there are keybindings specified, populate bind_tuple, otherwise set
+        it to an empty tuple.
+        """
+        if bind_str:
+            self.populate_bind_tuple(bind_str.split(','))
+        else:
+            self.bind_tuple = ()
+
+    def populate_bind_tuple(self, binds):
         """
         Parse the bind string and use it to populate bind_list with fzf
         commands.
