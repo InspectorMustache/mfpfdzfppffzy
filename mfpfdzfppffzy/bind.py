@@ -1,10 +1,10 @@
 import re
 from .utils import coroutine
 
-MFP_BIND_RE = re.compile(r'^(.+?):mfp\((.*)\)$', flags=re.DOTALL)
+MFP_BIND_RE = re.compile(r"^(.+?):mfp\((.*)\)$", flags=re.DOTALL)
 
 
-class KeyBindings():
+class KeyBindings:
     """
     An object that's represented as a tuple which can be passed to a subprocess
     method as a command line parameter.
@@ -14,8 +14,8 @@ class KeyBindings():
         self.fifo = fifo
         self.bind_list = []
         self.bind_tuple = None
-        self.cmd_temp = 'echo {} > ' + self.fifo
-        self.exec_temp = 'execute-silent#{} &#'
+        self.cmd_temp = "echo {} > " + self.fifo
+        self.exec_temp = "execute-silent#{} &#"
         self.parse_bind_str(bind_str)
 
     def parse_bind_str(self, bind_str):
@@ -24,7 +24,7 @@ class KeyBindings():
         it to an empty tuple.
         """
         if bind_str:
-            self.populate_bind_tuple(bind_str.split(','))
+            self.populate_bind_tuple(bind_str.split(","))
         else:
             self.bind_tuple = ()
 
@@ -42,7 +42,7 @@ class KeyBindings():
 
         # use the populated bind_list to create bind_tuple
         if self.bind_list:
-            self.bind_tuple = ('--bind={}'.format(','.join(self.bind_list)), )
+            self.bind_tuple = ("--bind={}".format(",".join(self.bind_list)),)
         else:
             self.bind_tuple = ()
 
@@ -74,22 +74,22 @@ class KeyBindings():
             bind_str = yield
             key, cmd = MFP_BIND_RE.match(bind_str).groups()
 
-            if '&&' in cmd:
+            if "&&" in cmd:
                 cmd = self.get_multi_cmd(cmd)
             else:
                 cmd = self.cmd_temp.format(cmd)
 
             cmd = self.exec_temp.format(cmd)
-            self.bind_list.append('{}:{}'.format(key, cmd))
+            self.bind_list.append("{}:{}".format(key, cmd))
 
     def get_multi_cmd(self, cmd_str):
         """
         Create a command for execute() made of multiple commands in cmd_str
         separated by '&&'.
         """
-        cmds = [s.strip() for s in cmd_str.split('&&')]
+        cmds = [s.strip() for s in cmd_str.split("&&")]
         cmds = map(lambda x: self.cmd_temp.format(x), cmds)
-        return ' && '.join(cmds)
+        return " && ".join(cmds)
 
     def __getitem__(self, key):
         return self.bind_tuple[key]

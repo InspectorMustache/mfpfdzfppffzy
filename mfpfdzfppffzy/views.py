@@ -8,9 +8,9 @@ from copy import deepcopy
 from .utils import UserError, lax_int, coroutine
 import time
 
-FZF_PROG_OPTS = ('-m', '--height=100%', '--inline-info', '--no-sort')
-FZF_DEFAULT_OPTS = shlex.split(os.getenv('FZF_DEFAULT_OPTS', default=''))
-ARTIST_PREFIX_MATCHER = re.compile(r'^the (.+)', flags=re.IGNORECASE)
+FZF_PROG_OPTS = ("-m", "--height=100%", "--inline-info", "--no-sort")
+FZF_DEFAULT_OPTS = shlex.split(os.getenv("FZF_DEFAULT_OPTS", default=""))
+ARTIST_PREFIX_MATCHER = re.compile(r"^the (.+)", flags=re.IGNORECASE)
 
 # constants for the three types of dynamic headers
 NO_DYNAMIC_HEADERS = 0
@@ -18,19 +18,23 @@ DYNAMIC_HEADERS = 1
 CAT_DYNAMIC_HEADERS = 2
 
 
-class ViewSettings():
+class ViewSettings:
     """
     A container for settings relevant to creating views.
     Returns string arguments for command and header in a processible tuple
     form.
     """
-    def __init__(self, full_cmd,
-                 sort_field=None,
-                 dynamic_headers=NO_DYNAMIC_HEADERS,
-                 the_strip=False,
-                 additional_args=None,
-                 keybinds=None,
-                 required_tags=None):
+
+    def __init__(
+        self,
+        full_cmd,
+        sort_field=None,
+        dynamic_headers=NO_DYNAMIC_HEADERS,
+        the_strip=False,
+        additional_args=None,
+        keybinds=None,
+        required_tags=None,
+    ):
         self.cmd = full_cmd[0]
         self.cmd_args = full_cmd[1:]
         self.sort_field = sort_field
@@ -39,14 +43,14 @@ class ViewSettings():
         self.additional_args = additional_args or []
         self.keybinds = keybinds
         self.required_tags = required_tags
-        self.header_str = ''
+        self.header_str = ""
         self.out_type = dict
         self.entries = []
 
     @property
     def header(self):
         """Return header as tuple for use in Popen and the like."""
-        return ('--header', self.header_str) if self.header_str else ()
+        return ("--header", self.header_str) if self.header_str else ()
 
     @header.setter
     def header(self, value):
@@ -60,7 +64,7 @@ class ViewSettings():
         client.
         """
         if self.required_tags:
-            return {'required_tags': self.required_tags}
+            return {"required_tags": self.required_tags}
         else:
             return {}
 
@@ -69,23 +73,31 @@ class ViewSettings():
         """Create and return sort key function from sort_field."""
         if self.out_type == dict:
             if self.the_strip:
+
                 def key_sort(x):
                     mo = ARTIST_PREFIX_MATCHER.match(x[self.sort_field])
                     if mo:
                         return mo.group(1).lower()
                     else:
                         return x[self.sort_field].lower()
+
             else:
+
                 def key_sort(x):
                     return x[self.sort_field].lower()
+
         elif self.out_type == str:
             if self.the_strip:
+
                 def key_sort(x):
                     mo = ARTIST_PREFIX_MATCHER.match(x)
                     return mo.group(1).lower() if mo else x.lower()
+
             else:
+
                 def key_sort(x):
                     return x.lower()
+
         else:
             # this should never happen
             def my_func(x):
@@ -104,15 +116,14 @@ class ViewSettings():
             # invalid but it's nice to be safe
             self.header_str = ([self.cmd] + self.cmd_args)[-1]
         elif self.dynamic_headers == CAT_DYNAMIC_HEADERS and args:
-            self.header_str = get_formatted_output_line(
-                *[x.capitalize() for x in args])
+            self.header_str = get_formatted_output_line(*[x.capitalize() for x in args])
         else:
             # if CAT_DYNAMIC_HEADERS were requested but there are no args to
             # build them from, do nothing
             pass
 
 
-class FilterView():
+class FilterView:
     """
     Create a view consisting of several views that progressively filter the
     selection. The most obvious example would be Artist->Album->Title.
@@ -122,8 +133,8 @@ class FilterView():
     selection for every view but the first. In this case, provided headers are
     ignored.
     """
-    def __init__(self, mpc, views, dynamic_headers=None,
-                 final_view='track_view'):
+
+    def __init__(self, mpc, views, dynamic_headers=None, final_view="track_view"):
         # the caller must make sure that the sequence is appropriately ordered
         self.mpc = mpc
         self.views = views
@@ -164,8 +175,7 @@ class FilterView():
         if self.state < self.final_state - 1:
             self.sel = container_view(self.mpc, view)
         else:
-            self.sel = getattr(
-                sys.modules[__name__], self.final_view)(self.mpc, view)
+            self.sel = getattr(sys.modules[__name__], self.final_view)(self.mpc, view)
 
     def append_filters_to_list(self, l):
         """Takes a list l and appends all selected filters to it."""
@@ -208,8 +218,7 @@ def get_track_output_line(find_dict):
     Create a formatted line from find_dict including track number and
     title.
     """
-    return '{:02} - {}'.format(
-        lax_int(find_dict['track']), find_dict['title'])
+    return "{:02} - {}".format(lax_int(find_dict["track"]), find_dict["title"])
 
 
 def get_formatted_output_line(*args):
@@ -229,10 +238,10 @@ def get_formatted_output_line(*args):
     # there should be at least one space between (table) columns for better
     # optics (that's where the (item_w -1) comes in)
     output = map(
-        lambda x: '{}…'.format(x[:item_w - 2]) if len(x) > (item_w - 1) else x,
-        args)
+        lambda x: "{}…".format(x[: item_w - 2]) if len(x) > (item_w - 1) else x, args
+    )
     # pad if necessary and join
-    output = ''.join([x.ljust(item_w) for x in output])
+    output = "".join([x.ljust(item_w) for x in output])
     return output
 
 
@@ -246,8 +255,7 @@ def add_view_entries(mpc, view_settings, entry_func, *entry_func_args):
     """
     Add view_str's to the dict in view_settings.entries.
     """
-    adder = create_view_entry_adder(
-        view_settings, entry_func, *entry_func_args)
+    adder = create_view_entry_adder(view_settings, entry_func, *entry_func_args)
     for item in mpc.handle_view_settings(view_settings):
         adder.send(item)
 
@@ -263,7 +271,7 @@ def create_view_entry_adder(view_settings, entry_func, *entry_func_args):
     while True:
         find_dict = yield
         view_str = entry_func(find_dict, *entry_func_args)
-        find_dict['view_str'] = view_str
+        find_dict["view_str"] = view_str
         view_settings.entries.append(find_dict)
 
 
@@ -276,34 +284,36 @@ def add_entry_to_dict(entry_func, *entry_func_args):
     """
     while True:
         find_entry = yield
-        find_entry['fzf_string'] = entry_func(find_entry, *entry_func_args)
+        find_entry["fzf_string"] = entry_func(find_entry, *entry_func_args)
 
 
 def adapt_find_duplicates(find_list):
     """Make sure the fzf_string key of each item in find_list is unique by
     appending NUL."""
 
-    fzf_strs = [x['fzf_string'] for x in find_list]
+    fzf_strs = [x["fzf_string"] for x in find_list]
     dup_strs = {x for x in fzf_strs if fzf_strs.count(x) > 1}
 
     for dstr in dup_strs:
-        dups = filter(lambda x: x['fzf_string'] == dstr, find_list)
+        dups = filter(lambda x: x["fzf_string"] == dstr, find_list)
         for i, d in enumerate(dups):
-            d['fzf_string'] += '\x0000' * i
+            d["fzf_string"] += "\x0000" * i
 
 
 def pipe_to_fzf(content, *args):
     """Pipe content to fzf and return a tuple (stdout, stderr)."""
-    fzf = subprocess.Popen(['fzf', *FZF_DEFAULT_OPTS, *FZF_PROG_OPTS, *args],
-                           stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           encoding='utf-8')
+    fzf = subprocess.Popen(
+        ["fzf", *FZF_DEFAULT_OPTS, *FZF_PROG_OPTS, *args],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        encoding="utf-8",
+    )
 
     # TODO: exception handling
     try:
         stdout, stderr = fzf.communicate(input=content)
     except FileNotFoundError as exc:
-        raise UserError(
-            'Executable {} not found in PATH.'.format(exc.filename))
+        raise UserError("Executable {} not found in PATH.".format(exc.filename))
 
     return stdout, fzf.returncode
 
@@ -315,7 +325,7 @@ def get_view_entries(view_settings):
     if view_settings.out_type == str:
         entries = view_settings.entries
     else:
-        entries = [x['view_str'] for x in view_settings.entries]
+        entries = [x["view_str"] for x in view_settings.entries]
 
     if view_settings.sort_field or view_settings.the_strip:
         entries.sort(key=view_settings.sort_func)
@@ -326,18 +336,20 @@ def get_view_entries(view_settings):
 def create_view(view_settings):
     """
     Create a fzf view from view_settings."""
-    view = '\n'.join(get_view_entries(view_settings))
-    sel, returncode = pipe_to_fzf(view, *view_settings.keybinds,
-                                  *view_settings.header,
-                                  *view_settings.additional_args)
+    view = "\n".join(get_view_entries(view_settings))
+    sel, returncode = pipe_to_fzf(
+        view,
+        *view_settings.keybinds,
+        *view_settings.header,
+        *view_settings.additional_args
+    )
     if returncode == 0:
-        return sel.strip('\n')
+        return sel.strip("\n")
     else:
         return None
 
 
-def create_view_with_custom_entries(mpc, entry_func, view_settings,
-                                    entry_func_args=()):
+def create_view_with_custom_entries(mpc, entry_func, view_settings, entry_func_args=()):
     """
     Create a view from custom entries generated by entry_func (and
     entry_func_args).
@@ -364,19 +376,18 @@ def track_view(mpc, view_settings):
     Optionally specify sorting with sort_field and a header for fzf.
     Return the selection.
     """
-    view_settings.required_tags = ('track', 'title', view_settings.sort_field)
+    view_settings.required_tags = ("track", "title", view_settings.sort_field)
     view_settings.update_headers()
-    return create_view_with_custom_entries(
-        mpc, get_track_output_line, view_settings)
+    return create_view_with_custom_entries(mpc, get_track_output_line, view_settings)
 
 
 def singles_view(mpc, view_settings):
     """
     Use args as commands to the MPD Client and build a track-based view.
     """
-    tags = ('artist', 'album', 'title')
+    tags = ("artist", "album", "title")
     view_settings.required_tags = (*tags, view_settings.sort_field)
     view_settings.update_headers(*tags)
     return create_view_with_custom_entries(
-        mpc, get_tag_output_line, view_settings,
-        entry_func_args=tags)
+        mpc, get_tag_output_line, view_settings, entry_func_args=tags
+    )

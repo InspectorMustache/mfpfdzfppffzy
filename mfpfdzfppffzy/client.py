@@ -13,6 +13,7 @@ def always_connect(instance, f):
     """
     Decorator that makes sure there is a connection to mpd before running f.
     """
+
     @wraps(f)
     def wrapped(*args, **kwargs):
         v = None
@@ -34,12 +35,13 @@ def always_connect(instance, f):
 
 def catch_command_error(f):
     """Decorator that catches CommandErrors and reraises them as UserErrors."""
+
     @wraps(f)
     def wrapped(*args, **kwargs):
         try:
             return f(*args, **kwargs)
         except mpd.CommandError as e:
-            raise UserError('The MPD server returned: {}'.format(str(e)))
+            raise UserError("The MPD server returned: {}".format(str(e)))
 
     return wrapped
 
@@ -53,10 +55,11 @@ def add_required_tags(f):
     """
     Ensure required tags for find and search based commands by decoration.
     """
+
     @wraps(f)
     def wrapped(self, *args, **kwargs):
         # make sure we get all the tags we need so we don't get a key error
-        self.required_tags = kwargs.pop('required_tags', False)
+        self.required_tags = kwargs.pop("required_tags", False)
         match = f(self, *args, **kwargs)
 
         if self.required_tags:
@@ -74,8 +77,8 @@ class ConnectClient(mpd.MPDClient):
         self.required_tags = False
         self.addr = host
         self.port = port
-        self.view = None               # these are for communication
-        self.fifo = self.get_fifo()    # with fzf
+        self.view = None  # these are for communication
+        self.fifo = self.get_fifo()  # with fzf
         self.fifo_thread = None
         atexit.register(os.remove, self.fifo)
         super().__init__()
@@ -85,7 +88,7 @@ class ConnectClient(mpd.MPDClient):
         """Create fifo in temp directory."""
         while True:
             try:  # this should be safer, right?
-                path = tempfile.mktemp(prefix='mfpfdzfppffzy.')
+                path = tempfile.mktemp(prefix="mfpfdzfppffzy.")
                 os.mkfifo(path)
                 break
             except FileExistsError:
@@ -98,16 +101,17 @@ class ConnectClient(mpd.MPDClient):
         Create and return a logger that keeps track of commands sent to the
         fifo.
         """
-        logger = logging.getLogger('fifo_log')
+        logger = logging.getLogger("fifo_log")
         logger.setLevel(logging.INFO)
-        handler = logging.FileHandler('{}.log'.format(self.fifo))
+        handler = logging.FileHandler("{}.log".format(self.fifo))
         formatter = logging.Formatter(
-            '%(asctime)s %(levelname)s | %(message)s', datefmt='%H:%M:%S')
+            "%(asctime)s %(levelname)s | %(message)s", datefmt="%H:%M:%S"
+        )
         handler.setLevel(logging.INFO)
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
-        atexit.register(os.remove, '{}.log'.format(self.fifo))
+        atexit.register(os.remove, "{}.log".format(self.fifo))
 
         return logger
 
@@ -120,17 +124,16 @@ class ConnectClient(mpd.MPDClient):
         fifo_logger = self.get_fifo_logger()
 
         while True:
-            fifo_logger.info('waiting for message')
+            fifo_logger.info("waiting for message")
             with open(self.fifo) as fifo:
                 msg = fifo.read()
-                msg = msg.strip('\n')
-                fifo_logger.info('received: {}'.format(msg))
+                msg = msg.strip("\n")
+                fifo_logger.info("received: {}".format(msg))
 
                 try:
                     self.run_mpd_command(shlex.split(msg))
                 except UserError as exc:
-                    fifo_logger.warning(
-                        'a UserError was raised: {}'.format(exc))
+                    fifo_logger.warning("a UserError was raised: {}".format(exc))
 
     def listen_on_fifo(self):
         """
@@ -143,7 +146,7 @@ class ConnectClient(mpd.MPDClient):
     def ensure_tags(self, title):
         """Ensure title has tags as keys."""
         for tag in filter(lambda x: x not in title.keys(), self.required_tags):
-            title[tag] = ''
+            title[tag] = ""
         return title
 
     def ensure_connect(self):
@@ -178,8 +181,8 @@ class ConnectClient(mpd.MPDClient):
         """Run a command associated with a ViewSettings object."""
         try:
             return getattr(self, view_settings.cmd)(
-                *view_settings.cmd_args, *args,
-                **view_settings.cmd_kwargs, **kwargs)
+                *view_settings.cmd_args, *args, **view_settings.cmd_kwargs, **kwargs
+            )
         except AttributeError:
             # this function should never be called with a non-registered method
             # as a command; a ViewSettings object should only be created with a
@@ -197,5 +200,6 @@ class ConnectClient(mpd.MPDClient):
             cmd = cmd_list[0]
             return getattr(self, cmd)(*cmd_list[1:])
         except AttributeError:
-            raise UserError('"{}" is not a valid mpd command.'.format(
-                ' '.join(cmd_list)))
+            raise UserError(
+                '"{}" is not a valid mpd command.'.format(" ".join(cmd_list))
+            )
